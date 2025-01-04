@@ -1,14 +1,29 @@
-import { Controller, Get, Res, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Res,
+  Query,
+  Post,
+  Body,
+  Logger,
+  UseGuards,
+} from '@nestjs/common';
 import { AppService } from './app.service';
 import { Response } from 'express';
 import * as QRCode from 'qrcode';
 import { ConfigService } from '@nestjs/config';
+import { DigitalOceanService } from './digitalOcean.service';
+import { SupabaseService } from './supabase.service';
+import { AuthGuard } from './guards/auth.guard';
 
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
     private configService: ConfigService,
+    private logger: Logger,
+    private digitalOceanService: DigitalOceanService,
+    private supabaseService: SupabaseService,
   ) {}
 
   @Get()
@@ -44,6 +59,27 @@ export class AppController {
     } catch (e) {
       console.error('Error generating QR code:', e);
       return res.status(500).json({ error: 'Failed to generate QR code' });
+    }
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('loadVep')
+  async loadVep(
+    @Res() res: Response,
+    @Body()
+    body: {
+      pdf: Buffer;
+      name_pdf: string;
+    },
+  ): Promise<Response> {
+    try {
+      const { pdf, name_pdf } = body;
+      await this.digitalOceanService.uploadFile(name_pdf, pdf);
+
+      return res.status(200).json({ message: 'File uploaded successfully' });
+    } catch (error) {
+      this.logger.error(error);
+      return res.status(500).json({ error: 'Error loading VEP users' });
     }
   }
 }

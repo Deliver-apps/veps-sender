@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ConfigModule } from '@nestjs/config';
 import { AppService } from './app.service';
@@ -9,6 +9,7 @@ import serverConfig from './config/server.config';
 import { WhatsappService } from './whatsapp.service';
 import { SchedulerService } from './scheduler.service';
 import { SupabaseService } from './supabase.service';
+import { DigitalOceanService } from './digitalOcean.service';
 
 @Module({
   imports: [
@@ -19,6 +20,13 @@ import { SupabaseService } from './supabase.service';
     VepSenderModule,
   ],
   controllers: [AppController],
-  providers: [AppService, WhatsappService, SchedulerService, SupabaseService],
+  providers: [
+    AppService,
+    WhatsappService,
+    SchedulerService,
+    SupabaseService,
+    DigitalOceanService,
+    Logger,
+  ],
 })
 export class AppModule {}

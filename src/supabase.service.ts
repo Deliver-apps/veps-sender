@@ -11,7 +11,6 @@ export class SupabaseService {
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('supabase.url');
     const supabaseKey = this.configService.get<string>('supabase.key');
-    this.logger.error(supabaseUrl, supabaseKey);
 
     this.supabase = createClient(supabaseUrl, supabaseKey);
   }

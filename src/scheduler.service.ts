@@ -36,13 +36,12 @@ export class SchedulerService implements OnModuleInit {
             throw new Error('No se pudieron obtener los usuarios de VEP');
           }
           const current_month_spanish = moment().format('MMMM');
-          const current_year = moment().format('YYYY');
           const today = new Date();
           const date_to_pay = moment().add(1, 'month').format('MMMM');
 
           for (const user of users) {
             const archive: Buffer = await this.digitalOceanService.getFile(
-              `veps_${current_month_spanish}_${current_year}/vep_${user.id}_${current_month_spanish}.pdf`,
+              `${user.real_name} [${user.cuit}].pdf`,
             );
             if (!archive) {
               throw new Error('No se pudo obtener el archivo de VEP');

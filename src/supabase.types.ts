@@ -84,8 +84,10 @@ export type Database = {
       vep_users: {
         Row: {
           alter_name: string;
+          cuit: string | null;
           execution_date: string | null;
           id: number;
+          is_group: boolean;
           last_execution: string | null;
           mobile_number: string;
           need_papers: boolean | null;
@@ -93,8 +95,10 @@ export type Database = {
         };
         Insert: {
           alter_name: string;
+          cuit?: string | null;
           execution_date?: string | null;
           id?: number;
+          is_group?: boolean;
           last_execution?: string | null;
           mobile_number: string;
           need_papers?: boolean | null;
@@ -102,8 +106,10 @@ export type Database = {
         };
         Update: {
           alter_name?: string;
+          cuit?: string | null;
           execution_date?: string | null;
           id?: number;
+          is_group?: boolean;
           last_execution?: string | null;
           mobile_number?: string;
           need_papers?: boolean | null;

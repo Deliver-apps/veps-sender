@@ -68,13 +68,14 @@ export class AppController {
     @Res() res: Response,
     @Body()
     body: {
-      pdf: Buffer;
+      pdf: string;
       name_pdf: string;
     },
   ): Promise<Response> {
     try {
       const { pdf, name_pdf } = body;
-      await this.digitalOceanService.uploadFile(name_pdf, pdf);
+      const pdfBuffer = Buffer.from(pdf, 'base64');
+      await this.digitalOceanService.uploadFile(name_pdf, pdfBuffer);
 
       return res.status(200).json({ message: 'File uploaded successfully' });
     } catch (error) {

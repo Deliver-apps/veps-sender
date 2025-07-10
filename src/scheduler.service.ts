@@ -61,12 +61,18 @@ export class SchedulerService implements OnModuleInit {
               'document',
               false,
             );
+
+            // Update last_execution date in Supabase
+            await this.supabaseService.updateVepUserLastExecution(
+              user.id,
+              moment().format('YYYY-MM-DD HH:mm:ss'),
+            );
           }
           this.logger.log(
             `Cron job triggered at ${moment().format()}, sending messages to ${users.length} users, ${users.map((user) => user.mobile_number).join(', ')}`,
           );
         } catch (error) {
-          this.logger.error(error);
+          this.logger.error(`Error in cron job: ${error.message}`, error.stack);
         }
       },
       null, // On complete (optional, leave null if not needed)

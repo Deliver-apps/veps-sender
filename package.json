@@ -22,6 +22,9 @@
     "session:download": "node scripts/session-manager.js download",
     "session:backup": "node scripts/session-manager.js backup"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.722.0",
     "@hapi/boom": "^10.0.1",

@@ -26,6 +26,37 @@ export class SupabaseService {
     return data;
   }
 
+  async updateVepUserLastExecution(
+    userId: number,
+    lastExecution: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('vep_users')
+      .update({ last_execution: lastExecution })
+      .eq('id', userId);
+
+    if (error) {
+      this.logger.error(error);
+      throw new BadRequestException(error.toString());
+    }
+  }
+
+  async getThisMonthNotSentUsers(): Promise<
+    Database['public']['Tables']['vep_users']['Row'][]
+  > {
+    const currentMonth = new Date().getMonth() + 1; // getMonth() returns 0-11
+    const { data, error } = await this.supabase
+      .from('vep_users')
+      .select('*')
+      .eq('last_execution', null)
+      .or(`last_execution.is.null,last_execution.eq.${currentMonth}`);
+    if (error) {
+      this.logger.error(error);
+      throw new BadRequestException(error.toString());
+    }
+    return data;
+  }
+
   async verifyToken(token: string): Promise<{
     user: User;
   }> {

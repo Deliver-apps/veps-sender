@@ -146,6 +146,17 @@ export class AppController {
     }
   }
 
+  @Get('notSentThisMonth')
+  async getNotSentThisMonth(@Res() res: Response): Promise<Response> {
+    try {
+      const users = await this.supabaseService.getThisMonthNotSentUsers();
+      return res.status(200).json(users);
+    } catch (error) {
+      this.logger.error(error);
+      return res.status(500).json({ error: 'Error fetching users' });
+    }
+  }
+
   @Post('sendAllVeps')
   async sendAllVeps(@Res() res: Response): Promise<Response> {
     try {

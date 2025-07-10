@@ -44,7 +44,7 @@ export class SchedulerService implements OnModuleInit {
               `${user.real_name} [${user.cuit}].pdf`,
             );
             if (!archive) {
-              throw new Error('No se pudo obtener el archivo de VEP');
+              continue; // Skip if no archive found
             }
             console.log(archive);
             const message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso el VEP del mes ${current_month_spanish}, vence en ${date_to_pay}. \n`;

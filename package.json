@@ -17,7 +17,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "session:upload": "node scripts/upload-session.js",
+    "session:download": "node scripts/session-manager.js download",
+    "session:backup": "node scripts/session-manager.js backup"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.722.0",
@@ -29,10 +32,12 @@
     "@supabase/postgrest-js": "^1.17.7",
     "@supabase/supabase-js": "^2.47.10",
     "@whiskeysockets/baileys": "^6.7.9",
+    "adm-zip": "^0.5.16",
     "axios": "^1.7.9",
     "cron": "^3.3.1",
     "lodash": "^4.17.21",
     "moment-timezone": "^0.5.46",
+    "node-fetch": "^2.7.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "reflect-metadata": "^0.2.0",
@@ -42,6 +47,7 @@
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@types/adm-zip": "^0.5.7",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
     "@types/node": "^20.3.1",

@@ -4,4 +4,4 @@ onlyBuiltDependencies:
   - supabase
 packages:
   - 'packages/*'
-  - 'src/*'
+  - 'src/*' 

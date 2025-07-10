@@ -7,6 +7,7 @@ import {
   Body,
   Logger,
   UseGuards,
+  Delete,
 } from '@nestjs/common';
 import { AppService } from './app.service';
 import { Response } from 'express';
@@ -31,6 +32,17 @@ export class AppController {
   @Get()
   getHello(): string {
     return this.appService.getHello();
+  }
+
+  @Delete('deleteSession')
+  async deleteSession(@Res() res: Response): Promise<Response> {
+    try {
+      await this.whatsappService.deleteSession();
+      return res.status(200).json({ message: 'Session deleted successfully' });
+    } catch (error) {
+      this.logger.error(error);
+      return res.status(500).json({ error: 'Error deleting session' });
+    }
   }
 
   @Post('sendMessageVep')

@@ -147,6 +147,23 @@ export class WhatsappService implements OnModuleInit {
     }
   }
 
+  async deleteSession(): Promise<void> {
+    try {
+      const sessionDirPath = this.SESSION_FILE; // './session.json'
+      
+      // Usar fs.rm con recursive y force para manejar tanto archivos como directorios
+      await fs.rm(sessionDirPath, { 
+        recursive: true,  // Elimina directorios recursivamente
+        force: true       // No falla si el archivo/directorio no existe
+      });
+      
+      console.log(`Session ${this.SESSION_FILE} deleted successfully`);
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      throw error;
+    }
+  }
+
   async downloadSession(sessionFileName?: string): Promise<void> {
     try {
       // Si no se especifica un archivo, buscar el más reciente

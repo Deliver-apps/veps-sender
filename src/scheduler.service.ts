@@ -40,8 +40,10 @@ export class SchedulerService implements OnModuleInit {
           const date_to_pay = moment().add(1, 'month').format('MMMM');
 
           for (const user of users) {
-            const archive: Buffer = await this.digitalOceanService.getFile(
+            const folderName = `veps_${current_month_spanish}_${today.getFullYear()}`;
+            const archive: Buffer = await this.digitalOceanService.getFileVeps(
               `${user.real_name} [${user.cuit}].pdf`,
+              folderName,
             );
             if (!archive) {
               continue; // Skip if no archive found

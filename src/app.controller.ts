@@ -172,21 +172,33 @@ export class AppController {
   @Post('sendAllVeps')
   async sendAllVeps(@Res() res: Response): Promise<Response> {
     try {
+      this.logger.verbose('Starting to send VEP messages to all users...');
       const users = await this.supabaseService.getVepUsers();
+      this.logger.verbose('Fetched users:', users);
       if (!users || users.length === 0) {
         return res.status(404).json({ error: 'No VEP users found' });
       }
+      this.logger.verbose(`Found ${users.length} users to send VEP messages to.`);
       const current_month_spanish = new Date().toLocaleString('es-AR', { month: 'long' });
       const today = new Date();
       const date_to_pay = new Date();
       date_to_pay.setMonth(date_to_pay.getMonth() + 1);
       const date_to_pay_spanish = date_to_pay.toLocaleString('es-AR', { month: 'long' });
+      const year_to_pay = date_to_pay.getFullYear();
       for (const user of users) {
-        const archive: Buffer = await this.digitalOceanService.getFile(
-          `${user.real_name} [${user.cuit}].pdf`,
-        );
+        const archiveName = `${user.real_name} [${user.cuit}].pdf`;
+        this.logger.verbose(`Fetching archive for user: ${user.real_name} [${user.cuit}]`);
+        let archive: Buffer | null = null;
+        try {
+          const folderName = `veps_${current_month_spanish}_${year_to_pay}`;
+          this.logger.verbose(`Fetching archive from folder: ${folderName}`);
+          archive = await this.digitalOceanService.getFileVeps(archiveName, folderName);
+        } catch (error) {
+          this.logger.error(`Error fetching archive for user ${user.real_name} [${user.cuit}]:`, error);
+          continue; // Skip if error fetching archive
+        }
         if (!archive) {
-          this.logger.warn(`No archive found for user ${user.real_name} (${user.cuit})`);
+          this.logger.warn(`No archive found for user ${user.real_name} [${user.cuit}]`);
           continue; // Skip if no archive found
         }
         const message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso el VEP del mes ${current_month_spanish}, vence en ${date_to_pay_spanish}. \n`;

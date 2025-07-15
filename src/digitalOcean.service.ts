@@ -62,6 +62,33 @@ export class DigitalOceanService {
     }
   }
 
+  async getFileVeps(fileName: string, folderName: string): Promise<Buffer> {
+    try {
+      // 1. Send the command
+      const { Body } = await this.s3.send(
+        new GetObjectCommand({
+          Bucket: 'veps-facturacion',
+          Key: `${folderName}/${fileName}`,
+        }),
+      );
+
+      // 2. The Body is often a Readable stream
+      const stream = Body as Readable;
+
+      // 3. Read all chunks into an array
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+
+      // 4. Concatenate to get a single Buffer
+      return Buffer.concat(chunks);
+    } catch (e) {
+      console.error(e);
+      throw new Error('Error getting file from DigitalOcean');
+    }
+  }
+
   async uploadFile(
     fileName: string,
     fileContent: Buffer,

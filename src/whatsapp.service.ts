@@ -36,7 +36,7 @@ export class WhatsappService implements OnModuleInit {
       auth: state,
       printQRInTerminal: false,
     });
-    
+     
     // Enhance saveCreds to auto-backup to cloud
     const originalSaveCreds = saveCreds;
     const enhancedSaveCreds = async () => {

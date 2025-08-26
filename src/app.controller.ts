@@ -9,6 +9,7 @@ import {
   UseGuards,
   Delete,
 } from '@nestjs/common';
+import { nowBA, formatBA, getMonthNameBA } from './time.helper';
 import { AppService } from './app.service';
 import { Response } from 'express';
 import * as QRCode from 'qrcode';
@@ -17,6 +18,8 @@ import { DigitalOceanService } from './digitalOcean.service';
 import { SupabaseService } from './supabase.service';
 import { AuthGuard } from './guards/auth.guard';
 import { WhatsappService } from './whatsapp.service';
+import { VepSchedulerService } from './vep-scheduler.service';
+import { VepSenderService } from './vep-sender/vep-sender.service';
 
 @Controller()
 export class AppController {
@@ -27,6 +30,8 @@ export class AppController {
     private digitalOceanService: DigitalOceanService,
     private supabaseService: SupabaseService,
     private readonly whatsappService: WhatsappService,
+    private readonly vepSenderService: VepSenderService,
+    private readonly vepSchedulerService: VepSchedulerService,
   ) {}
 
   @Get()
@@ -141,16 +146,16 @@ export class AppController {
   ): Promise<Response> {
     try {
       const { sessionFiles, backupCurrent } = body;
-      
+
       // Opción para hacer backup de la sesión actual antes de subir la nueva
       if (backupCurrent) {
         await this.whatsappService.backupCurrentSession();
       }
-      
+
       await this.whatsappService.uploadSession(sessionFiles);
-      return res.status(200).json({ 
+      return res.status(200).json({
         message: 'Session uploaded successfully',
-        timestamp: new Date().toISOString()
+        timestamp: formatBA(nowBA()),
       });
     } catch (error) {
       this.logger.error(error);
@@ -172,59 +177,11 @@ export class AppController {
   @Post('sendAllVeps')
   async sendAllVeps(@Res() res: Response): Promise<Response> {
     try {
-      this.logger.verbose('Starting to send VEP messages to all users...');
-      const users = await this.supabaseService.getVepUsers();
-      this.logger.verbose('Fetched users:', users);
-      if (!users || users.length === 0) {
-        return res.status(404).json({ error: 'No VEP users found' });
-      }
-      this.logger.verbose(`Found ${users.length} users to send VEP messages to.`);
-      const current_month_spanish = new Date().toLocaleString('es-AR', { month: 'long' });
-      const today = new Date();
-      const date_to_pay = new Date();
-      date_to_pay.setMonth(date_to_pay.getMonth() + 1);
-      const date_to_pay_spanish = date_to_pay.toLocaleString('es-AR', { month: 'long' });
-      const year_to_pay = date_to_pay.getFullYear();
-      for (const user of users) {
-        const archiveName = `${user.real_name} [${user.cuit}].pdf`;
-        this.logger.verbose(`Fetching archive for user: ${user.real_name} [${user.cuit}]`);
-        let archive: Buffer | null = null;
-        try {
-          const folderName = `veps_${current_month_spanish}_${year_to_pay}`;
-          this.logger.verbose(`Fetching archive from folder: ${folderName}`);
-          archive = await this.digitalOceanService.getFileVeps(archiveName, folderName);
-        } catch (error) {
-          this.logger.error(`Error fetching archive for user ${user.real_name} [${user.cuit}]:`, error);
-          continue; // Skip if error fetching archive
-        }
-        if (!archive) {
-          this.logger.warn(`No archive found for user ${user.real_name} [${user.cuit}]`);
-          continue; // Skip if no archive found
-        }
-        const message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso el VEP del mes ${current_month_spanish}, vence en ${date_to_pay_spanish}. \n`;
-        const final_message = user.need_papers
-          ? message + 'No te olvides cuando puedas de mandarme los papeles de ventas. Saludos.'
-          : message;
-
-        await this.whatsappService.sendMessageVep(
-          user.mobile_number,
-          final_message,
-          `VEP-${today.getMilliseconds()})`,
-          archive,
-          'document',
-          user.is_group,
-        );
-      }
-      this.logger.log(
-        `Sent VEP messages to ${users.length} users: ${users.map((user) => user.mobile_number).join(', ')}`,
-      );
-      return res.status(200).json({
-        message: 'VEP messages sent successfully',
-        timestamp: new Date().toISOString(),
-      });
+      const result = await this.vepSenderService.sendAllVeps();
+      return res.status(200).json(result);
     } catch (error) {
       this.logger.error(error);
-      return res.status(500).json({ error: 'Error sending VEP messages' });
+      return res.status(500).json({ error: error.message || 'Error sending VEP messages' });
     }
   }
 
@@ -239,9 +196,9 @@ export class AppController {
     try {
       const { sessionFileName } = body;
       await this.whatsappService.downloadSession(sessionFileName);
-      return res.status(200).json({ 
+      return res.status(200).json({
         message: 'Session downloaded successfully',
-        timestamp: new Date().toISOString()
+        timestamp: formatBA(nowBA()),
       });
     } catch (error) {
       this.logger.error(error);
@@ -253,10 +210,10 @@ export class AppController {
   async backupSession(@Res() res: Response): Promise<Response> {
     try {
       const backupFileName = await this.whatsappService.backupCurrentSession();
-      return res.status(200).json({ 
+      return res.status(200).json({
         message: 'Session backed up successfully',
         fileName: backupFileName,
-        timestamp: new Date().toISOString()
+        timestamp: formatBA(nowBA()),
       });
     } catch (error) {
       this.logger.error(error);

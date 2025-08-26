@@ -9,6 +9,7 @@ import { DigitalOceanService } from './digitalOcean.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
+import { nowBA } from './time.helper';
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
@@ -58,7 +59,8 @@ export class WhatsappService implements OnModuleInit {
     
     this.socket.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
-      console.table(update)
+      //print time NOW
+      console.table({ update, nowBA: nowBA().toISO() });
       if (qr) {
         console.log('QR Code received, updating app service...');
         this.appService.setQrCode(qr);
@@ -119,6 +121,88 @@ export class WhatsappService implements OnModuleInit {
         await this.socket.sendMessage(jid_final, { text });
         break;
     }
+  }
+
+  // Nuevo método para múltiples archivos
+  async sendMultipleFiles(
+    jid: string,
+    text: string,
+    files: Array<{
+      archive: Buffer;
+      fileName: string;
+      media: string;
+      mimetype?: string;
+    }>,
+    isGroup?: boolean,
+  ) {
+    const jid_final = isGroup ? `${jid}@g.us` : `${jid}@s.whatsapp.net`;
+
+    // Enviar mensaje de texto primero si existe
+    if (text) {
+      await this.socket.sendMessage(jid_final, { text });
+    }
+
+    // Enviar archivos consecutivamente
+    for (const file of files) {
+      try {
+        switch (file.media) {
+          case 'document':
+            await this.socket.sendMessage(jid_final, {
+              document: file.archive,
+              fileName: file.fileName || 'archivo.pdf',
+              mimetype: file.mimetype || 'application/pdf',
+            });
+            break;
+          case 'image':
+            await this.socket.sendMessage(jid_final, {
+              image: file.archive,
+            });
+            break;
+          case 'video':
+            await this.socket.sendMessage(jid_final, {
+              video: file.archive,
+              mimetype: file.mimetype || 'video/mp4',
+            });
+            break;
+          case 'audio':
+            await this.socket.sendMessage(jid_final, {
+              audio: file.archive,
+              mimetype: file.mimetype || 'audio/mp3',
+            });
+            break;
+          default:
+            console.warn(`Tipo de archivo no soportado: ${file.media}`);
+            break;
+        }
+
+        // Pequeña pausa entre archivos para evitar spam
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`Error enviando archivo ${file.fileName}:`, error);
+        // Continuar con el siguiente archivo
+      }
+    }
+  }
+
+  // Método para enviar múltiples documentos específicamente
+  async sendMultipleDocuments(
+    jid: string,
+    text: string,
+    documents: Array<{
+      archive: Buffer;
+      fileName: string;
+      mimetype?: string;
+    }>,
+    isGroup?: boolean,
+  ) {
+    const files = documents.map(doc => ({
+      ...doc,
+      media: 'document' as const,
+      mimetype: doc.mimetype || 'application/pdf'
+    }));
+    
+    return this.sendMultipleFiles(jid, text, files, isGroup);
   }
 
   async uploadSession(sessionFiles: { [fileName: string]: string }): Promise<void> {

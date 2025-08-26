@@ -92,6 +92,8 @@ export type Database = {
           mobile_number: string;
           need_papers: boolean | null;
           real_name: string;
+          joined_with?: string | null;
+          joined_cuit?: string | null
         };
         Insert: {
           alter_name: string;
@@ -103,6 +105,8 @@ export type Database = {
           mobile_number: string;
           need_papers?: boolean | null;
           real_name: string;
+          joined_with?: string | null;
+          joined_cuit?: string | null
         };
         Update: {
           alter_name?: string;
@@ -114,6 +118,8 @@ export type Database = {
           mobile_number?: string;
           need_papers?: boolean | null;
           real_name?: string;
+          joined_with?: string | null;
+          joined_cuit?: string | null
         };
         Relationships: [];
       };

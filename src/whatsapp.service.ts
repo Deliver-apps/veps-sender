@@ -58,13 +58,13 @@ export class WhatsappService implements OnModuleInit {
     this.socket.ev.on('creds.update', enhancedSaveCreds);
     
     this.socket.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
+      const { connection, lastDisconnect } = update;
       //print time NOW
       console.table({ update, nowBA: nowBA().toISO() });
-      if (qr) {
-        console.log('QR Code received, updating app service...');
-        this.appService.setQrCode(qr);
-      }
+      // if (qr) {
+      //   console.log('QR Code received, updating app service...');
+      //   this.appService.setQrCode(qr);
+      // }
       if (connection === 'close') {
         const shouldReconnect =
           (lastDisconnect?.error as Boom)?.output?.statusCode !==

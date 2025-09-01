@@ -63,7 +63,7 @@ export class SchedulerService implements OnModuleInit {
               'document',
               false,
             );
-
+            console.table(users)
             // Update last_execution date in Supabase
             await this.supabaseService.updateVepUserLastExecution(
               user.id,

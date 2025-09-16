@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import moment from 'moment-timezone';
 import { DigitalOceanService } from 'src/digitalOcean.service';
 import { SupabaseService } from 'src/supabase.service';
 import { formatBA, getMonthNameBA, nowBA } from 'src/time.helper';
@@ -28,7 +29,7 @@ export class VepSenderService {
     const date_to_pay_spanish = getMonthNameBA(date_to_pay);
     const year_to_pay = date_to_pay.year;
     for (const user of users) {
-      const archiveName = `${user.real_name}[${user.cuit}].pdf`;
+      const archiveName = `${user.real_name}[${user.cuit}].pdf` ;
       this.logger.verbose(
         `Fetching archive for user: ${user.real_name}[${user.cuit}]`,
       );
@@ -104,6 +105,11 @@ export class VepSenderService {
             user.is_group,
           );
         }
+
+        await this.supabaseService.updateVepUserLastExecution(
+          user.id,
+          new Date().toISOString(),
+        );
       }
     }
     this.logger.log(

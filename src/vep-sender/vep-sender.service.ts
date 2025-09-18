@@ -15,7 +15,9 @@ export class VepSenderService {
     private whatsappService: WhatsappService,
   ) {}
 
-  async sendAllVeps(): Promise<{ message: string; timestamp: string }> {
+  async sendAllVeps(
+
+  ): Promise<{ message: string; timestamp: string }> {
     this.logger.verbose('Starting to send VEP messages to all users...');
     const users = await this.supabaseService.getVepUsers();
     this.logger.verbose('Fetched users:', users);
@@ -42,14 +44,16 @@ export class VepSenderService {
           folderName,
         );
         archives.push(archive);
-        // if (user.joined_with && user.joined_cuit) {
-        //   this.logger.verbose(`Fetching archive from folder: ${folderName}`);
-        //   const archive = await this.digitalOceanService.getFileVeps(
-        //     archiveName,
-        //     folderName,
-        //   );
-        //   archives.push(archive);
-        // }
+        if (user.joined_users && user.joined_users.length > 0) {
+          for (const joinedUser of user.joined_users) {
+            this.logger.verbose(`Fetching archive from folder: ${folderName}`);
+            const archive = await this.digitalOceanService.getFileVeps(
+              `${joinedUser.name} [${joinedUser.cuit}].pdf`,
+              folderName,
+            );
+            archives.push(archive);
+          }
+        }
       } catch (error) {
         this.logger.error(
           `Error fetching archive for user ${user.real_name}[${user.cuit}]:`,
@@ -64,6 +68,7 @@ export class VepSenderService {
         continue; // Skip if no archive found
       }
       const message = `Buen día ${user.alter_name} cómo estás ? Te paso el vep de autónomo vence el 5/9\n`;
+
       // const message = `Buenos días ${user.alter_name}, cómo estás?. Te paso ${user.joined_cuit && user.joined_with ? 'las credenciales' : 'la credencial'} de Monotributo del mes de ${date_to_pay_spanish}, vence el ${process.env.END_DATE}. \n`;
       let final_message = user.need_papers
         ? message +

@@ -264,13 +264,15 @@ export class SupabaseService {
    * Busca usuarios VEP por criterios con coincidencias parciales case-insensitive
    * @param searchTerm Término de búsqueda (ej: "CaR" matchea con "carlos", "CarlOS", etc.)
    * @param field Campo específico para buscar (opcional)
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial'
    * @returns Lista de usuarios encontrados
    */
   async searchVepUsers(
     searchTerm: string,
-    field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit'
+    field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
+    type?: 'autónomo' | 'credencial'
   ): Promise<Database['public']['Tables']['vep_users']['Row'][]> {
-    this.logger.log(`Searching VEP users with term: ${searchTerm}, field: ${field || 'all'}`);
+    this.logger.log(`Searching VEP users with term: ${searchTerm}, field: ${field || 'all'}, type: ${type || 'all'}`);
     
     // Normalizar el término de búsqueda para hacer la búsqueda case-insensitive
     const normalizedSearchTerm = searchTerm.toLowerCase();
@@ -290,6 +292,11 @@ export class SupabaseService {
       );
     }
 
+    // Aplicar filtro por type si se especifica
+    if (type && (type === 'autónomo' || type === 'credencial')) {
+      query = query.eq('type', type);
+    }
+
     const { data, error } = await query.order('real_name');
 
     if (error) {
@@ -297,19 +304,25 @@ export class SupabaseService {
       throw new BadRequestException(error.toString());
     }
 
-    this.logger.log(`Found ${data?.length || 0} users matching "${searchTerm}"`);
+    this.logger.log(`Found ${data?.length || 0} users matching "${searchTerm}"${type ? ` with type "${type}"` : ''}`);
     return data || [];
   }
 
   /**
-   * Obtiene usuarios VEP con paginación
+   * Obtiene usuarios VEP con paginación y filtros opcionales
    * @param page Número de página
    * @param limit Límite de resultados por página
+   * @param searchTerm Término de búsqueda opcional (coincidencias parciales case-insensitive)
+   * @param field Campo específico para buscar (opcional)
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial'
    * @returns Usuarios paginados
    */
   async getVepUsersPaginated(
     page: number = 1,
-    limit: number = 10
+    limit: number = 10,
+    searchTerm?: string,
+    field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
+    type?: 'autónomo' | 'credencial'
   ): Promise<{
     data: Database['public']['Tables']['vep_users']['Row'][];
     total: number;
@@ -317,41 +330,70 @@ export class SupabaseService {
     limit: number;
     totalPages: number;
   }> {
-    this.logger.log(`Fetching VEP users - page: ${page}, limit: ${limit}`);
-    
+    this.logger.log(
+      `Fetching VEP users - page: ${page}, limit: ${limit}, search: ${searchTerm || 'none'}, field: ${field || 'all'}, type: ${type || 'all'}`
+    );
+  
     const offset = (page - 1) * limit;
-
-    // Obtener total de registros
-    const { count, error: countError } = await this.supabase
-      .from('vep_users')
-      .select('*', { count: 'exact', head: true });
-
-    if (countError) {
-      this.logger.error('Error counting VEP users:', countError);
-      throw new BadRequestException(countError.toString());
+  
+    /**
+     * 🔧 Helper para construir la query con todos los filtros aplicados
+     */
+    const buildBaseQuery = () => {
+      let query = this.supabase.from('vep_users').select('*');
+  
+      if (searchTerm) {
+        const normalizedSearchTerm = searchTerm.toLowerCase();
+  
+        if (field) {
+          query = query.ilike(field, `%${normalizedSearchTerm}%`);
+        } else {
+          query = query.or(
+            `real_name.ilike.%${normalizedSearchTerm}%,` +
+            `alter_name.ilike.%${normalizedSearchTerm}%,` +
+            `mobile_number.ilike.%${normalizedSearchTerm}%,` +
+            `cuit.ilike.%${normalizedSearchTerm}%`
+          );
+        }
+      }
+  
+      if (type && (type === 'autónomo' || type === 'credencial')) {
+        query = query.eq('type', type);
+      }
+  
+      return query;
+    };
+  
+    // 📊 Ejecutar queries en paralelo
+    const [countResult, dataResult] = await Promise.all([
+      buildBaseQuery()
+        .select('*').limit(0), // ✅ solo count
+    
+      buildBaseQuery()
+        .select('*')
+        .order('real_name')
+        .range(offset, offset + limit - 1),
+    ]);
+    
+    if (countResult.error) {
+      this.logger.error('Error counting VEP users:', countResult.error);
+      throw new BadRequestException(countResult.error.toString());
     }
-
-    // Obtener datos paginados
-    const { data, error } = await this.supabase
-      .from('vep_users')
-      .select('*')
-      .order('real_name')
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      this.logger.error('Error fetching paginated VEP users:', error);
-      throw new BadRequestException(error.toString());
+    
+    if (dataResult.error) {
+      this.logger.error('Error fetching paginated VEP users:', dataResult.error);
+      throw new BadRequestException(dataResult.error.toString());
     }
-
-    const total = count || 0;
+    
+    const total = countResult.count || 0;
     const totalPages = Math.ceil(total / limit);
-
+    
     return {
-      data: data || [],
+      data: dataResult.data || [],
       total,
       page,
       limit,
-      totalPages
+      totalPages,
     };
   }
 

@@ -42,14 +42,14 @@ export class VepSenderService {
           folderName,
         );
         archives.push(archive);
-        if (user.joined_with && user.joined_cuit) {
-          this.logger.verbose(`Fetching archive from folder: ${folderName}`);
-          const archive = await this.digitalOceanService.getFileVeps(
-            archiveName,
-            folderName,
-          );
-          archives.push(archive);
-        }
+        // if (user.joined_with && user.joined_cuit) {
+        //   this.logger.verbose(`Fetching archive from folder: ${folderName}`);
+        //   const archive = await this.digitalOceanService.getFileVeps(
+        //     archiveName,
+        //     folderName,
+        //   );
+        //   archives.push(archive);
+        // }
       } catch (error) {
         this.logger.error(
           `Error fetching archive for user ${user.real_name}[${user.cuit}]:`,
@@ -99,7 +99,7 @@ export class VepSenderService {
             final_message,
             archives.map((archive, index) => ({
               archive,
-              fileName: index === 0 ? `VEP-${user.real_name}[${user.cuit}]` : `VEP-${user.joined_with} [${user.joined_cuit}]`,
+              fileName: "a",//index === 0 ? `VEP-${user.real_name}[${user.cuit}]` : `VEP-${user.joined_with} [${user.joined_cuit}]`,
               mimetype: 'application/pdf',
             })),
             user.is_group,

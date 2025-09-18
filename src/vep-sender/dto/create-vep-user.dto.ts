@@ -1,4 +1,15 @@
-import { IsString, IsBoolean, IsOptional, IsNotEmpty, IsPhoneNumber } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsNotEmpty, IsPhoneNumber, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class JoinedUserDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  cuit: string;
+}
 
 export class CreateVepUserDto {
   @IsString()
@@ -46,6 +57,14 @@ export class CreateVepUserDto {
   @IsNotEmpty()
   real_name: string;
 
+  // Nuevos campos para múltiples usuarios asociados (arrays JSON)
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => JoinedUserDto)
+  joined_users?: JoinedUserDto[];
+
+  // Mantener compatibilidad con campos antiguos (opcional)
   @IsString()
   @IsOptional()
   joined_with?: string | null;

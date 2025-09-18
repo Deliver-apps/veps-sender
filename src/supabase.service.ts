@@ -354,4 +354,97 @@ export class SupabaseService {
       totalPages
     };
   }
+
+  /**
+   * Agrega un usuario asociado a un usuario VEP existente
+   * @param userId ID del usuario principal
+   * @param joinedUser Usuario a agregar
+   * @returns Usuario actualizado
+   */
+  async addJoinedUser(
+    userId: number,
+    joinedUser: { name: string; cuit: string }
+  ): Promise<Database['public']['Tables']['vep_users']['Row']> {
+    this.logger.log(`Adding joined user to VEP user ${userId}: ${joinedUser.name}`);
+    
+    // Obtener el usuario actual
+    const currentUser = await this.getVepUserById(userId);
+    
+    // Obtener usuarios asociados existentes
+    let joinedUsers = currentUser.joined_users || [];
+    if (typeof joinedUsers === 'string') {
+      try {
+        joinedUsers = JSON.parse(joinedUsers);
+      } catch {
+        joinedUsers = [];
+      }
+    }
+    
+    // Agregar el nuevo usuario
+    joinedUsers.push(joinedUser);
+    
+    // Actualizar el usuario
+    return await this.updateVepUser(userId, {
+      joined_users: joinedUsers,
+    });
+  }
+
+  /**
+   * Elimina un usuario asociado de un usuario VEP
+   * @param userId ID del usuario principal
+   * @param joinedUserCuit CUIT del usuario a eliminar
+   * @returns Usuario actualizado
+   */
+  async removeJoinedUser(
+    userId: number,
+    joinedUserCuit: string
+  ): Promise<Database['public']['Tables']['vep_users']['Row']> {
+    this.logger.log(`Removing joined user from VEP user ${userId}: ${joinedUserCuit}`);
+    
+    // Obtener el usuario actual
+    const currentUser = await this.getVepUserById(userId);
+    
+    // Obtener usuarios asociados existentes
+    let joinedUsers = currentUser.joined_users || [];
+    if (typeof joinedUsers === 'string') {
+      try {
+        joinedUsers = JSON.parse(joinedUsers);
+      } catch {
+        joinedUsers = [];
+      }
+    }
+    
+    // Filtrar el usuario a eliminar
+    const filteredUsers = joinedUsers.filter((user: any) => user.cuit !== joinedUserCuit);
+    
+    // Actualizar el usuario
+    return await this.updateVepUser(userId, {
+      joined_users: filteredUsers,
+    });
+  }
+
+  /**
+   * Obtiene todos los usuarios asociados de un usuario VEP
+   * @param userId ID del usuario principal
+   * @returns Lista de usuarios asociados
+   */
+  async getJoinedUsers(userId: number): Promise<{ name: string; cuit: string }[]> {
+    this.logger.log(`Getting joined users for VEP user ${userId}`);
+    
+    const user = await this.getVepUserById(userId);
+    
+    if (!user.joined_users) {
+      return [];
+    }
+    
+    if (typeof user.joined_users === 'string') {
+      try {
+        return JSON.parse(user.joined_users);
+      } catch {
+        return [];
+      }
+    }
+    
+    return user.joined_users;
+  }
 }

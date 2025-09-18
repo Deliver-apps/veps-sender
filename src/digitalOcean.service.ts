@@ -394,6 +394,76 @@ export class DigitalOceanService {
   }
 
   /**
+   * Descarga un archivo por su clave (key) completa
+   * @param fileKey Clave completa del archivo (incluyendo carpeta)
+   */
+  async downloadFile(fileKey: string): Promise<Buffer> {
+    try {
+      const { Body } = await this.s3.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileKey,
+        }),
+      );
+
+      const stream = Body as Readable;
+      const chunks: Buffer[] = [];
+      
+      for await (const chunk of stream) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+
+      return Buffer.concat(chunks);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
+        throw new BadRequestException(`El archivo '${fileKey}' no existe`);
+      }
+      throw new Error(`Error al descargar el archivo '${fileKey}': ${error.message}`);
+    }
+  }
+
+  /**
+   * Busca un archivo por nombre exacto y devuelve su información
+   * @param fileName Nombre del archivo a buscar
+   * @param folderName Carpeta específica (opcional)
+   */
+  async findFileByName(fileName: string, folderName?: string): Promise<FolderItem | null> {
+    try {
+      const params = {
+        Bucket: this.bucketName,
+        Prefix: folderName ? `${folderName}/` : '',
+      };
+
+      const response: ListObjectsV2CommandOutput = await this.s3.send(new ListObjectsV2Command(params));
+      
+      if (response.Contents) {
+        for (const object of response.Contents) {
+          const objectFileName = folderName 
+            ? object.Key.replace(`${folderName}/`, '')
+            : object.Key;
+          
+          // Buscar coincidencia exacta del nombre
+          if (objectFileName === fileName && fileName !== '') {
+            return {
+              name: objectFileName,
+              type: 'file',
+              size: object.Size,
+              lastModified: object.LastModified,
+              key: object.Key,
+            };
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error finding file by name:', error);
+      throw new Error(`Error al buscar el archivo '${fileName}': ${error.message}`);
+    }
+  }
+
+  /**
    * Genera el nombre de carpeta con formato veps_(mes en español)_(año)
    * @param month Número del mes (1-12)
    * @param year Año

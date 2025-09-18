@@ -11,6 +11,7 @@ import { SupabaseService } from './supabase.service';
 import { DigitalOceanService } from './digitalOcean.service';
 import { VepSchedulerService } from './vep-scheduler.service';
 import { VepSenderService } from './vep-sender/vep-sender.service';
+import { VepSenderModule } from './vep-sender/vep-sender.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { VepSenderService } from './vep-sender/vep-sender.service';
       isGlobal: true,
       load: [supabaseConfig, digitalOceanConfig, serverConfig],
     }),
+    VepSenderModule,
   ],
   controllers: [AppController],
   providers: [

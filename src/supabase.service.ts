@@ -396,8 +396,6 @@ export class SupabaseService {
       totalPages,
     };
   }
-  
-  
 
   /**
    * Agrega un usuario asociado a un usuario VEP existente

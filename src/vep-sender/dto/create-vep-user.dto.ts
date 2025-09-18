@@ -57,7 +57,6 @@ export class CreateVepUserDto {
   @IsNotEmpty()
   real_name: string;
 
-  // Campo type con valores específicos
   @IsString()
   @IsNotEmpty()
   @IsIn(['autónomo', 'credencial'])

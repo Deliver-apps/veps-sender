@@ -1,3 +1,5 @@
+import { JoinedUserDto } from "./vep-sender/dto/create-vep-user.dto";
+
 export type Json =
   | string
   | number
@@ -95,8 +97,10 @@ export type Database = {
           need_compra: boolean | null;
           need_auditoria: boolean | null;
           real_name: string;
-          joined_with?: string | null;
-          joined_cuit?: string | null;
+          joined_users: Array<{
+            name: string;
+            cuit: string;
+          }> | null;
         };
         Insert: {
           alter_name: string;
@@ -111,8 +115,10 @@ export type Database = {
           need_compra?: boolean | null;
           need_auditoria?: boolean | null;
           real_name: string;
-          joined_with?: string | null;
-          joined_cuit?: string | null;
+          joined_users?: Array<{
+            name: string;
+            cuit: string;
+          }> | null;
         };
         Update: {
           alter_name?: string;
@@ -127,8 +133,10 @@ export type Database = {
           need_compra?: boolean | null;
           need_auditoria?: boolean | null;
           real_name?: string;
-          joined_with?: string | null;
-          joined_cuit?: string | null;
+          joined_users?: Array<{
+            name: string;
+            cuit: string;
+          }> | null;
         };
         Relationships: [];
       };

@@ -124,4 +124,49 @@ export class VepUsersController {
     this.logger.log('Fetching VEP users not sent this month');
     return await this.supabaseService.getThisMonthNotSentUsers();
   }
+
+  // ========== ENDPOINTS PARA USUARIOS ASOCIADOS ==========
+
+  /**
+   * Obtiene todos los usuarios asociados de un usuario VEP
+   * @param id ID del usuario principal
+   * @returns Lista de usuarios asociados
+   */
+  @Get(':id/joined-users')
+  async getJoinedUsers(@Param('id', ParseIntPipe) id: number) {
+    this.logger.log(`Getting joined users for VEP user ${id}`);
+    return await this.supabaseService.getJoinedUsers(id);
+  }
+
+  /**
+   * Agrega un usuario asociado a un usuario VEP
+   * @param id ID del usuario principal
+   * @param body Datos del usuario a agregar
+   * @returns Usuario actualizado
+   */
+  @Post(':id/joined-users')
+  @HttpCode(HttpStatus.OK)
+  async addJoinedUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { name: string; cuit: string }
+  ) {
+    this.logger.log(`Adding joined user to VEP user ${id}: ${body.name}`);
+    return await this.supabaseService.addJoinedUser(id, body);
+  }
+
+  /**
+   * Elimina un usuario asociado de un usuario VEP
+   * @param id ID del usuario principal
+   * @param cuit CUIT del usuario a eliminar
+   * @returns Usuario actualizado
+   */
+  @Delete(':id/joined-users/:cuit')
+  @HttpCode(HttpStatus.OK)
+  async removeJoinedUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('cuit') cuit: string
+  ) {
+    this.logger.log(`Removing joined user from VEP user ${id}: ${cuit}`);
+    return await this.supabaseService.removeJoinedUser(id, cuit);
+  }
 }

@@ -1,4 +1,4 @@
-import { IsString, IsBoolean, IsOptional, IsNotEmpty, IsPhoneNumber, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsNotEmpty, IsPhoneNumber, IsArray, ValidateNested, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class JoinedUserDto {
@@ -56,6 +56,12 @@ export class CreateVepUserDto {
   @IsString()
   @IsNotEmpty()
   real_name: string;
+
+  // Campo type con valores específicos
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['autónomo', 'credencial'])
+  type: 'autónomo' | 'credencial';
 
   // Nuevos campos para múltiples usuarios asociados (arrays JSON)
   @IsArray()

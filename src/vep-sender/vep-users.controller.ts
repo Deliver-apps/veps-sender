@@ -48,33 +48,41 @@ export class VepUsersController {
   }
 
   /**
-   * Obtiene usuarios VEP con paginación
+   * Obtiene usuarios VEP con paginación y filtros opcionales
    * @param page Número de página (opcional, por defecto 1)
    * @param limit Límite de resultados por página (opcional, por defecto 10)
+   * @param search Término de búsqueda opcional (coincidencias parciales case-insensitive)
+   * @param field Campo específico para buscar (opcional)
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial'
    * @returns Usuarios paginados
    */
   @Get('paginated')
   async findPaginated(
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
+    @Query('search') search?: string,
+    @Query('field') field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
+    @Query('type') type?: 'autónomo' | 'credencial',
   ) {
-    this.logger.log(`Fetching VEP users - page: ${page}, limit: ${limit}`);
-    return await this.supabaseService.getVepUsersPaginated(page, limit);
+    this.logger.log(`Fetching VEP users - page: ${page}, limit: ${limit}, search: ${search || 'none'}, field: ${field || 'all'}, type: ${type || 'all'}`);
+    return await this.supabaseService.getVepUsersPaginated(page, limit, search, field, type);
   }
 
   /**
    * Busca usuarios VEP por criterios
    * @param term Término de búsqueda
    * @param field Campo específico para buscar (opcional)
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial'
    * @returns Lista de usuarios encontrados
    */
   @Get('search')
   async search(
     @Query('term') term: string,
     @Query('field') field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
+    @Query('type') type?: 'autónomo' | 'credencial',
   ) {
-    this.logger.log(`Searching VEP users with term: ${term}, field: ${field || 'all'}`);
-    return await this.supabaseService.searchVepUsers(term, field);
+    this.logger.log(`Searching VEP users with term: ${term}, field: ${field || 'all'}, type: ${type || 'all'}`);
+    return await this.supabaseService.searchVepUsers(term, field, type);
   }
 
   /**

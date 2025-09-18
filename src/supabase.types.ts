@@ -101,6 +101,7 @@ export type Database = {
             name: string;
             cuit: string;
           }> | null;
+          type: 'autónomo' | 'credencial';
         };
         Insert: {
           alter_name: string;
@@ -119,6 +120,7 @@ export type Database = {
             name: string;
             cuit: string;
           }> | null;
+          type: 'autónomo' | 'credencial';
         };
         Update: {
           alter_name?: string;
@@ -137,6 +139,7 @@ export type Database = {
             name: string;
             cuit: string;
           }> | null;
+          type?: 'autónomo' | 'credencial';
         };
         Relationships: [];
       };

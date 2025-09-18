@@ -91,9 +91,12 @@ export type Database = {
           last_execution: string | null;
           mobile_number: string;
           need_papers: boolean | null;
+          need_z: boolean | null;
+          need_compra: boolean | null;
+          need_auditoria: boolean | null;
           real_name: string;
           joined_with?: string | null;
-          joined_cuit?: string | null
+          joined_cuit?: string | null;
         };
         Insert: {
           alter_name: string;
@@ -104,9 +107,12 @@ export type Database = {
           last_execution?: string | null;
           mobile_number: string;
           need_papers?: boolean | null;
+          need_z?: boolean | null;
+          need_compra?: boolean | null;
+          need_auditoria?: boolean | null;
           real_name: string;
           joined_with?: string | null;
-          joined_cuit?: string | null
+          joined_cuit?: string | null;
         };
         Update: {
           alter_name?: string;
@@ -117,9 +123,12 @@ export type Database = {
           last_execution?: string | null;
           mobile_number?: string;
           need_papers?: boolean | null;
+          need_z?: boolean | null;
+          need_compra?: boolean | null;
+          need_auditoria?: boolean | null;
           real_name?: string;
           joined_with?: string | null;
-          joined_cuit?: string | null
+          joined_cuit?: string | null;
         };
         Relationships: [];
       };

@@ -101,7 +101,7 @@ export type Database = {
             name: string;
             cuit: string;
           }> | null;
-          type: 'autónomo' | 'credencial';
+          type: 'autónomo' | 'credencial' | 'monotributo';
         };
         Insert: {
           alter_name: string;
@@ -120,7 +120,7 @@ export type Database = {
             name: string;
             cuit: string;
           }> | null;
-          type: 'autónomo' | 'credencial';
+          type: 'autónomo' | 'credencial' | 'monotributo';
         };
         Update: {
           alter_name?: string;
@@ -139,7 +139,100 @@ export type Database = {
             name: string;
             cuit: string;
           }> | null;
-          type?: 'autónomo' | 'credencial';
+          type?: 'autónomo' | 'credencial' | 'monotributo';
+        };
+        Relationships: [];
+      };
+      job_time: {
+        Row: {
+          id: number;
+          created_at: string;
+          users: Array<{
+            id: number;
+            real_name: string;
+            alter_name: string;
+            mobile_number: string;
+            last_execution: string | null;
+            execution_date: string | null;
+            need_papers: boolean | null;
+            is_group: boolean;
+            joined_users: Array<{
+              cuit: string;
+              name: string;
+            }> | null;
+            need_z: boolean | null;
+            need_compra: boolean | null;
+            need_auditoria: boolean | null;
+            cuit: string | null;
+            type: 'autónomo' | 'credencial' | 'monotributo';
+            sent: boolean;
+          }> | null;
+          execution_time: string | null;
+          type: 'autónomo' | 'credencial' | 'monotributo' | null;
+          folder_name: string | null;
+          status: 'PENDING' | 'RUNNING' | 'FINISHED' | 'ERROR';
+          caducate: string;
+          executed_at: string;
+        };
+        Insert: {
+          id?: number;
+          created_at?: string;
+          users?: Array<{
+            id: number;
+            real_name: string;
+            alter_name: string;
+            mobile_number: string;
+            last_execution: string | null;
+            execution_date: string | null;
+            need_papers: boolean | null;
+            is_group: boolean;
+            joined_users: Array<{
+              cuit: string;
+              name: string;
+            }> | null;
+            need_z: boolean | null;
+            need_compra: boolean | null;
+            need_auditoria: boolean | null;
+            cuit: string | null;
+            type: 'autónomo' | 'credencial' | 'monotributo';
+            sent: boolean
+          }> | null;
+          execution_time?: string | null;
+          type?: 'autónomo' | 'credencial' | 'monotributo' | null;
+          folder_name?: string | null;
+          status?: 'PENDING' | 'RUNNING' | 'FINISHED' | 'ERROR';
+          caducate?: string;
+          executed_at?: string;
+        };
+        Update: {
+          id?: number;
+          created_at?: string;
+          users?: Array<{
+            id: number;
+            real_name: string;
+            alter_name: string;
+            mobile_number: string;
+            last_execution: string | null;
+            execution_date: string | null;
+            need_papers: boolean | null;
+            is_group: boolean;
+            joined_users: Array<{
+              cuit: string;
+              name: string;
+            }> | null;
+            need_z: boolean | null;
+            need_compra: boolean | null;
+            need_auditoria: boolean | null;
+            cuit: string | null;
+            type: 'autónomo' | 'credencial' | 'monotributo';
+            sent: boolean
+          }> | null;
+          execution_time?: string | null;
+          type?: 'autónomo' | 'credencial' | 'monotributo' | null;
+          folder_name?: string | null;
+          status?: 'PENDING' | 'RUNNING' | 'FINISHED' | 'ERROR';
+          caducate?: string;
+          executed_at?: string;
         };
         Relationships: [];
       };
@@ -151,7 +244,8 @@ export type Database = {
       [_ in never]: never;
     };
     Enums: {
-      [_ in never]: never;
+      TypeUser: 'autónomo' | 'credencial' | 'monotributo';
+      StatusJob: 'PENDING' | 'FINISHED' | 'RUNNING' | 'ERROR';
     };
     CompositeTypes: {
       [_ in never]: never;

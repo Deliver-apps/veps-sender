@@ -13,13 +13,16 @@ import {
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { SupabaseService } from '../supabase.service';
 import { CreateVepUserDto } from './dto/create-vep-user.dto';
 import { UpdateVepUserDto } from './dto/update-vep-user.dto';
 import { DigitalOceanAuthGuard } from '../guards/digital-ocean-auth.guard';
 
+@ApiTags('VEP Users')
 @Controller('vep-users')
 @UseGuards(DigitalOceanAuthGuard)
+@ApiBearerAuth('DigitalOcean-auth')
 export class VepUsersController {
   private readonly logger = new Logger(VepUsersController.name);
 
@@ -32,6 +35,22 @@ export class VepUsersController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ 
+    summary: 'Crear un nuevo usuario VEP',
+    description: 'Crea un nuevo usuario VEP en el sistema'
+  })
+  @ApiBody({ 
+    type: CreateVepUserDto,
+    description: 'Datos del usuario VEP a crear'
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Usuario VEP creado exitosamente',
+    type: CreateVepUserDto
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - datos de validación inválidos' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
   async create(@Body() createVepUserDto: CreateVepUserDto) {
     this.logger.log('Creating new VEP user');
     return await this.supabaseService.createVepUser(createVepUserDto);
@@ -42,6 +61,16 @@ export class VepUsersController {
    * @returns Lista de todos los usuarios VEP
    */
   @Get()
+  @ApiOperation({ 
+    summary: 'Obtener todos los usuarios VEP',
+    description: 'Retorna una lista completa de todos los usuarios VEP en el sistema'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Lista de usuarios VEP obtenida exitosamente'
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
   async findAll() {
     this.logger.log('Fetching all VEP users');
     return await this.supabaseService.getVepUsers();
@@ -53,16 +82,42 @@ export class VepUsersController {
    * @param limit Límite de resultados por página (opcional, por defecto 10)
    * @param search Término de búsqueda opcional (coincidencias parciales case-insensitive)
    * @param field Campo específico para buscar (opcional)
-   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial'
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial' o 'monotributo'
    * @returns Usuarios paginados
    */
   @Get('paginated')
+  @ApiOperation({ 
+    summary: 'Obtener usuarios VEP paginados',
+    description: 'Retorna usuarios VEP con paginación y filtros opcionales de búsqueda'
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página', example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Límite de resultados por página', example: 10 })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Término de búsqueda (coincidencias parciales case-insensitive)', example: 'Juan' })
+  @ApiQuery({ name: 'field', required: false, enum: ['real_name', 'alter_name', 'mobile_number', 'cuit'], description: 'Campo específico para buscar' })
+  @ApiQuery({ name: 'type', required: false, enum: ['autónomo', 'credencial', 'monotributo'], description: 'Tipo de usuario a filtrar' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Usuarios VEP paginados obtenidos exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        data: { type: 'array', items: { $ref: '#/components/schemas/CreateVepUserDto' } },
+        total: { type: 'number', example: 100 },
+        page: { type: 'number', example: 1 },
+        limit: { type: 'number', example: 10 },
+        totalPages: { type: 'number', example: 10 }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
   async findPaginated(
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
     @Query('search') search?: string,
     @Query('field') field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
-    @Query('type') type?: 'autónomo' | 'credencial',
+    @Query('type') type?: 'autónomo' | 'credencial' | 'monotributo',
   ) {
     this.logger.log(`Fetching VEP users - page: ${page}, limit: ${limit}, search: ${search || 'none'}, field: ${field || 'all'}, type: ${type || 'all'}`);
     return await this.supabaseService.getVepUsersPaginated(page, limit, search, field, type);
@@ -72,14 +127,29 @@ export class VepUsersController {
    * Busca usuarios VEP por criterios
    * @param term Término de búsqueda
    * @param field Campo específico para buscar (opcional)
-   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial'
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial' o 'monotributo'
    * @returns Lista de usuarios encontrados
    */
   @Get('search')
+  @ApiOperation({ 
+    summary: 'Buscar usuarios VEP',
+    description: 'Busca usuarios VEP por término de búsqueda con filtros opcionales'
+  })
+  @ApiQuery({ name: 'term', required: true, type: String, description: 'Término de búsqueda', example: 'Juan' })
+  @ApiQuery({ name: 'field', required: false, enum: ['real_name', 'alter_name', 'mobile_number', 'cuit'], description: 'Campo específico para buscar' })
+  @ApiQuery({ name: 'type', required: false, enum: ['autónomo', 'credencial', 'monotributo'], description: 'Tipo de usuario a filtrar' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Usuarios VEP encontrados exitosamente',
+    type: [CreateVepUserDto]
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - término de búsqueda requerido' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
   async search(
     @Query('term') term: string,
     @Query('field') field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
-    @Query('type') type?: 'autónomo' | 'credencial',
+    @Query('type') type?: 'autónomo' | 'credencial' | 'monotributo',
   ) {
     this.logger.log(`Searching VEP users with term: ${term}, field: ${field || 'all'}, type: ${type || 'all'}`);
     return await this.supabaseService.searchVepUsers(term, field, type);
@@ -91,6 +161,19 @@ export class VepUsersController {
    * @returns Usuario encontrado
    */
   @Get(':id')
+  @ApiOperation({ 
+    summary: 'Obtener usuario VEP por ID',
+    description: 'Obtiene un usuario VEP específico por su ID'
+  })
+  @ApiParam({ name: 'id', type: Number, description: 'ID del usuario VEP', example: 1 })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Usuario VEP encontrado exitosamente',
+    type: CreateVepUserDto
+  })
+  @ApiResponse({ status: 404, description: 'Usuario VEP no encontrado' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     this.logger.log(`Fetching VEP user by ID: ${id}`);
     return await this.supabaseService.getVepUserById(id);

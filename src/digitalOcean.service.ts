@@ -109,6 +109,64 @@ export class DigitalOceanService {
     }
   }
 
+  /**
+   * Busca un archivo por CUIT parcial en una carpeta específica
+   * @param cuit - CUIT a buscar (ej: "20-38694960-4")
+   * @param folderName - Nombre de la carpeta donde buscar
+   * @returns Buffer del archivo encontrado
+   */
+  async getFileVepsByCuit(cuit: string, folderName: string): Promise<Buffer> {
+    try {
+      console.log(`🔍 Buscando archivo con CUIT ${cuit} en carpeta ${folderName}`);
+      
+      // 1. Listar todos los archivos en la carpeta
+      const listCommand = new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        Prefix: `${folderName}/`,
+        MaxKeys: 1000, // Ajustar según necesidad
+      });
+
+      const listResponse = await this.s3.send(listCommand);
+      
+      if (!listResponse.Contents || listResponse.Contents.length === 0) {
+        throw new Error(`No se encontraron archivos en la carpeta ${folderName}`);
+      }
+
+      // 2. Buscar archivo que contenga el CUIT
+      const matchingFile = listResponse.Contents.find(file => {
+        if (!file.Key) return false;
+        const fileName = file.Key.split('/').pop() || '';
+        return fileName.includes(cuit);
+      });
+
+      if (!matchingFile || !matchingFile.Key) {
+        throw new Error(`No se encontró archivo con CUIT ${cuit} en la carpeta ${folderName}`);
+      }
+
+      console.log(`✅ Archivo encontrado: ${matchingFile.Key}`);
+
+      // 3. Descargar el archivo encontrado
+      const { Body } = await this.s3.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: matchingFile.Key,
+        }),
+      );
+
+      // 4. Convertir stream a Buffer
+      const stream = Body as Readable;
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+
+      return Buffer.concat(chunks);
+    } catch (e) {
+      console.error(`❌ Error buscando archivo por CUIT ${cuit}:`, e);
+      throw new Error(`Error buscando archivo con CUIT ${cuit} en DigitalOcean`);
+    }
+  }
+
   async uploadFile(
     fileName: string,
     fileContent: Buffer,

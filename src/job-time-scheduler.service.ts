@@ -86,8 +86,12 @@ export class JobTimeSchedulerService implements OnModuleInit {
       }
 
       try {
-        // Parsear el execution_time del job (debe estar en GMT-3)
-        const jobTime = DateTime.fromISO(job.execution_time).setZone(this.timezone);
+        // Parsear el execution_time del job (viene como timestamp sin zona horaria, interpretarlo como GMT-3)
+        const jobTime = DateTime.fromISO(job.execution_time, { zone: this.timezone });
+        
+        // Log detallado para debugging
+        this.logger.log(`🕐 Job ${job.id} - Execution time: ${job.execution_time} -> Parsed as: ${jobTime.toISO()} (${jobTime.toFormat('yyyy-MM-dd HH:mm:ss')} GMT-3)`);
+        this.logger.log(`🕐 Current time: ${now.toISO()} (${now.toFormat('yyyy-MM-dd HH:mm:ss')} GMT-3)`);
         
         // Verificar si el job debe ejecutarse en este momento
         // Consideramos que un job debe ejecutarse si:

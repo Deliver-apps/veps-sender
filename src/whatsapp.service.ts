@@ -17,9 +17,10 @@ export class WhatsappService implements OnModuleInit {
   private sessionData: any;
   private SESSION_DIR: string = './session';
   private qrAttempts: number = 0;
-  private maxQrAttempts: number = 6; // Más realista para usuarios
-  private isInitialized: boolean = false;
-  private connectionState: 'connecting' | 'connected' | 'disconnected' = 'disconnected';
+  private maxQrAttempts: number = 2;
+  private lastBackupTime: number = 0;
+  private backupIntervalHours: number = 4;
+  private isInitializing: boolean = false;
 
   constructor(
     private appService: AppService,
@@ -28,103 +29,190 @@ export class WhatsappService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // Solo inicializar si no está ya inicializado
-    if (this.isInitialized) {
+    // Evitar múltiples inicializaciones concurrentes
+    if (this.isInitializing) {
+      console.log('⚠️ Ya hay una inicialización en progreso, omitiendo...');
       return;
     }
-
-    let hasValidSession = false;
-
-    // Verificar si existe la carpeta session localmente
+    
+    this.isInitializing = true;
+    
+    try {
+      console.log('🚀 Inicializando WhatsApp Service...');
+      console.log('🔧 Environment:', {
+        nodeEnv: process.env.NODE_ENV,
+        isProduction: this.configService.get<string>('server.node_env') === 'production',
+        sessionDir: this.SESSION_DIR
+      });
+      
+      // Verificar si ya existe una sesión local válida
+    let hasValidLocalSession = false;
     try {
       await fs.access(this.SESSION_DIR);
-      console.log('✅ Carpeta session encontrada localmente, no se descargará de DigitalOcean');
-      hasValidSession = true;
-    } catch (error) {
-      console.log('❌ No se encontró carpeta session localmente, intentando descargar de DigitalOcean...');
+      const files = await fs.readdir(this.SESSION_DIR);
       
-      // Solo descargar si no existe localmente
+      // Verificar que existan archivos de sesión válidos
+      const hasCredsFile = files.includes('creds.json');
+      const hasSessionFiles = files.some(file => file.startsWith('session-'));
+      
+        if (hasCredsFile && hasSessionFiles) {
+          console.log('✅ Sesión local válida encontrada, no se descargará de la nube');
+          hasValidLocalSession = true;
+          
+          // Verificar que creds.json no esté vacío o corrupto
+          try {
+            const credsPath = path.join(this.SESSION_DIR, 'creds.json');
+            const credsContent = await fs.readFile(credsPath, 'utf8');
+            const creds = JSON.parse(credsContent);
+            
+            if (!creds.noiseKey || !creds.signedIdentityKey) {
+              console.log('⚠️ Archivo creds.json incompleto');
+              hasValidLocalSession = false;
+            } else {
+              console.log('✅ Archivo creds.json válido con claves necesarias');
+            }
+          } catch (error) {
+            console.log('⚠️ Error leyendo creds.json:', error.message);
+            hasValidLocalSession = false;
+          }
+        } else {
+          console.log('❌ Sesión local incompleta - creds.json:', hasCredsFile, 'session files:', hasSessionFiles);
+        }
+    } catch (error) {
+      console.log('❌ No se encontró directorio de sesión local');
+    }
+
+    // Solo descargar si no hay sesión local válida
+    if (!hasValidLocalSession) {
       try {
+        console.log('📥 Intentando descargar sesión de la nube...');
         await this.downloadLatestSession();
-        console.log('✅ Sesión descargada exitosamente de DigitalOcean');
-        hasValidSession = true;
-      } catch (downloadError) {
-        console.log('❌ No existing session found in cloud or download failed, starting fresh');
-        hasValidSession = false;
+        console.log('✅ Sesión descargada exitosamente de la nube');
+      } catch (error) {
+        console.log('❌ No se encontró sesión en la nube o falló la descarga, iniciando sesión nueva');
       }
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(this.SESSION_DIR);
-    
-    // Verificar si la sesión local es válida
-    if (state.creds && state.creds.me) {
-      console.log('✅ Sesión local válida encontrada');
-      hasValidSession = true;
-    } else {
-      console.log('❌ No hay sesión local válida');
-      hasValidSession = false;
-    }
 
     this.socket = makeWASocket({
       auth: state,
       printQRInTerminal: false,
-      // Configuraciones adicionales para mejorar la estabilidad
-      connectTimeoutMs: 60000, // 60 segundos
-      keepAliveIntervalMs: 30000, // 30 segundos
-      retryRequestDelayMs: 250, // 250ms entre reintentos
-      maxMsgRetryCount: 5, // Máximo 5 reintentos por mensaje
-      markOnlineOnConnect: true,
-      browser: ['VEP Sender', 'Chrome', '4.0.0'],
+      // Configuraciones mejoradas para evitar timeouts
+      // connectTimeoutMs: 60000, // 60 segundos para conexión
+      // defaultQueryTimeoutMs: 30000, // 30 segundos para queries (reducido)
+      // keepAliveIntervalMs: 30000, // Keep alive cada 30 segundos
+      // retryRequestDelayMs: 1000, // 1 segundo entre reintentos
+      // maxMsgRetryCount: 3, // Reducido a 3 reintentos
+      // markOnlineOnConnect: true,
+      // browser: ['VEP Sender', 'Chrome', '4.0.0'],
+      // Configuraciones adicionales para estabilidad
+      // generateHighQualityLinkPreview: false,
+      // syncFullHistory: false,
+      // // Configuraciones para reducir timeouts internos
+      // getMessage: async (key) => {
+      //   // Devolver undefined para evitar queries innecesarias
+      //   return undefined;
+      // },
     });
      
     // Enhance saveCreds to auto-backup to cloud
     const originalSaveCreds = saveCreds;
     const enhancedSaveCreds = async () => {
-      await originalSaveCreds();
-      // Auto-backup to cloud after creds update
       try {
-        console.log('Auto-backup to cloud initiated...');
-        if (this.configService.get<string>('server.node_env') !== 'production') {
-          console.log('Auto-backup skipped in development mode');
-          return;
+        // Asegurar que el directorio existe antes de guardar
+        await fs.mkdir(this.SESSION_DIR, { recursive: true });
+        await originalSaveCreds();
+        
+        // Auto-backup to cloud after creds update
+        try {
+          console.log('Auto-backup to cloud initiated...');
+          if (this.configService.get<string>('server.node_env') !== 'production') {
+            console.log('Auto-backup skipped in development mode');
+            return;
+          }
+          await this.autoBackupToCloud();
+        } catch (error) {
+          console.error('Auto-backup failed:', error);
         }
-        await this.autoBackupToCloud();
-      } catch (error) {
-        console.error('Auto-backup failed:', error);
+      } catch (saveError) {
+        console.error('Error saving credentials:', saveError.message);
+        // Intentar recrear el directorio si no existe
+        try {
+          await fs.mkdir(this.SESSION_DIR, { recursive: true });
+          await originalSaveCreds();
+        } catch (retryError) {
+          console.error('Failed to save credentials after retry:', retryError.message);
+        }
       }
     };
 
     this.socket.ev.on('creds.update', enhancedSaveCreds);
     
-    this.socket.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      console.table({ update, nowBA: nowBA().toISO() });
-      
+        this.socket.ev.on('connection.update', async (update) => {
+          const { connection, lastDisconnect, qr } = update;
+          console.log('🔄 Connection update:', {
+            connection,
+            qr: !!qr,
+            error: lastDisconnect?.error?.message,
+            statusCode: (lastDisconnect?.error as any)?.output?.statusCode,
+            timestamp: nowBA().toISO()
+          });
       if (qr) {
         console.log('QR Code received, updating app service...');
         this.appService.setQrCode(qr);
         this.qrAttempts++;
-        this.connectionState = 'connecting';
+        console.log(`QR generado (intento ${this.qrAttempts}/${this.maxQrAttempts})`);
       }
-      
       if (connection === 'close') {
-        this.connectionState = 'disconnected';
-        const shouldReconnect =
-          (lastDisconnect?.error as Boom)?.output?.statusCode !==
-          DisconnectReason.loggedOut;
+        const error = lastDisconnect?.error as Boom;
+        const statusCode = error?.output?.statusCode;
+        const errorMessage = error?.message || '';
         
-        // Solo reconectar si no hemos excedido los intentos de QR
-        if (shouldReconnect && this.qrAttempts < this.maxQrAttempts) {
-          console.log(`Reconectando... (intento ${this.qrAttempts}/${this.maxQrAttempts})`);
-          // Usar setTimeout para evitar recursión directa
-          setTimeout(() => this.reconnect(), 2000);
-        } else if (this.qrAttempts >= this.maxQrAttempts) {
-          console.log('Máximo de intentos de QR alcanzado. No se reconectará automáticamente.');
+        console.log(`🔍 Conexión cerrada - StatusCode: ${statusCode}, Message: ${errorMessage}`);
+        
+        // No reconectar en casos específicos que causan bucles infinitos
+        const shouldNotReconnect = 
+          statusCode === DisconnectReason.loggedOut ||
+          errorMessage.includes('conflict') ||
+          errorMessage.includes('replaced') ||
+          statusCode === DisconnectReason.multideviceMismatch ||
+          statusCode === DisconnectReason.forbidden;
+        
+        if (shouldNotReconnect) {
+          console.log('🚫 No se reconectará automáticamente debido al tipo de error:', errorMessage);
+          
+          // Si es un conflicto, limpiar la sesión local para forzar nuevo QR
+          if (errorMessage.includes('conflict') || errorMessage.includes('replaced')) {
+            console.log('🧹 Limpiando sesión local debido a conflicto...');
+            try {
+              await this.deleteSession();
+              // Recrear el directorio para evitar errores de escritura
+              await fs.mkdir(this.SESSION_DIR, { recursive: true });
+              console.log('✅ Sesión local limpiada. Usa /qr-code para generar nuevo QR');
+            } catch (cleanError) {
+              console.error('❌ Error limpiando sesión:', cleanError.message);
+            }
+          }
+          
+          console.log('💡 Solución: Escanea el QR nuevamente o verifica que no hay otra instancia activa');
+          return;
+        }
+        
+        // Reconectar solo si no hemos excedido los intentos y el error es recuperable
+        if (this.qrAttempts < this.maxQrAttempts) {
+          console.log(`🔄 Reconectando... (intento ${this.qrAttempts + 1}/${this.maxQrAttempts})`);
+          // Esperar un poco antes de reconectar para evitar spam
+          setTimeout(() => {
+            this.onModuleInit();
+          }, 5000); // 5 segundos de espera
+        } else {
+          console.log('❌ Máximo de intentos de QR alcanzado. No se reconectará automáticamente.');
+          console.log('💡 Usa el endpoint /qr-code para generar un nuevo QR');
         }
       } else if (connection === 'open') {
-        this.connectionState = 'connected';
         console.log('WhatsApp connection established!');
-        this.qrAttempts = 0; // Reset contador cuando se conecta exitosamente
+        this.qrAttempts = 0; // Reset contador al conectar exitosamente
         // Backup session when successfully connected
         console.log('Backing up session to cloud...', this.configService.get<string>('server.node_env'));
         if(this.configService.get<string>('server.node_env') === 'production') {
@@ -135,28 +223,21 @@ export class WhatsappService implements OnModuleInit {
       }
     });
 
-    // Solo marcar como inicializado si hay una sesión válida
-    if (hasValidSession) {
-      console.log('✅ Servicio inicializado con sesión válida');
-      this.isInitialized = true;
-    } else {
-      console.log('⚠️ Servicio inicializado sin sesión válida - QR requerido');
-      this.isInitialized = true; // Marcar como inicializado para evitar bucles
+    this.socket.ev.on('messages.upsert', async (m) => {
+      console.log('Mensaje recibido:', JSON.stringify(m, undefined, 2));
+    });
+    
+      // Marcar inicialización como completada
+      this.isInitializing = false;
+      console.log('✅ WhatsApp Service inicializado correctamente');
+      
+    } catch (error) {
+      console.error('❌ Error durante la inicialización de WhatsApp Service:', error);
+      this.isInitializing = false; // Reset flag en caso de error
+      throw error;
     }
   }
 
-  /**
-   * Método separado para reconexión (evita recursión directa)
-   */
-  private async reconnect(): Promise<void> {
-    try {
-      console.log('🔄 Iniciando reconexión...');
-      this.isInitialized = false; // Reset para permitir nueva inicialización
-      await this.onModuleInit();
-    } catch (error) {
-      console.error('❌ Error durante reconexión:', error);
-    }
-  }
 
   async sendMessageVep(
     jid: string,
@@ -167,37 +248,72 @@ export class WhatsappService implements OnModuleInit {
     isGroup?: boolean,
   ) {
     const jid_final = isGroup ? `${jid}@g.us` : `${jid}@s.whatsapp.net`;
-    console.table({ jid_final, text, fileName, archive, media, isGroup });
-    switch (media) {
-      case 'document':
-        await this.socket.sendMessage(jid_final, {
-          document: archive,
-          fileName: fileName ? fileName : 'nuevo_pdf.pdf',
-          mimetype: 'application/pdf',
-          caption: text,
+    console.table({ jid_final, text, fileName, archive: archive?.length, media, isGroup });
+    
+    const maxRetries = 3;
+    const timeoutMs = 45000; // 45 segundos para archivos (más tiempo que texto)
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📤 Sending ${media || 'text'} message (attempt ${attempt}/${maxRetries}) to ${jid_final}`);
+        
+        let sendPromise: Promise<any>;
+        
+        switch (media) {
+          case 'document':
+            sendPromise = this.socket.sendMessage(jid_final, {
+              document: archive,
+              fileName: fileName ? fileName : 'nuevo_pdf.pdf',
+              mimetype: 'application/pdf',
+              caption: text,
+            });
+            break;
+          case 'image':
+            sendPromise = this.socket.sendMessage(jid_final, {
+              image: archive,
+              caption: text,
+            });
+            break;
+          case 'video':
+            sendPromise = this.socket.sendMessage(jid_final, {
+              video: archive,
+              caption: text,
+            });
+            break;
+          case 'audio':
+            sendPromise = this.socket.sendMessage(jid_final, {
+              audio: archive,
+              mimetype: 'audio/mpeg',
+            });
+            break;
+          default:
+            sendPromise = this.socket.sendMessage(jid_final, { text });
+            break;
+        }
+        
+        // Aplicar timeout
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Message send timeout')), timeoutMs);
         });
-        break;
-      case 'image':
-        await this.socket.sendMessage(jid_final, {
-          image: archive,
-          caption: text,
-        });
-        break;
-      case 'video':
-        await this.socket.sendMessage(jid_final, {
-          video: archive,
-          caption: text,
-        });
-        break;
-      case 'audio':
-        await this.socket.sendMessage(jid_final, {
-          audio: archive,
-          mimetype: 'audio/mpeg',
-        });
-        break;
-      default:
-        await this.socket.sendMessage(jid_final, { text });
-        break;
+        
+        await Promise.race([sendPromise, timeoutPromise]);
+        
+        console.log(`✅ ${media || 'text'} message sent successfully to ${jid_final}`);
+        return; // Éxito, salir del loop
+        
+      } catch (error) {
+        console.error(`❌ Error sending ${media || 'text'} message (attempt ${attempt}/${maxRetries}):`, error.message);
+        
+        // Si es el último intento, lanzar el error
+        if (attempt === maxRetries) {
+          throw new Error(`Failed to send ${media || 'text'} message after ${maxRetries} attempts: ${error.message}`);
+        }
+        
+        // Esperar antes del siguiente intento (backoff exponencial)
+        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 10000); // Max 10 segundos para archivos
+        console.log(`⏳ Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
 
@@ -373,8 +489,7 @@ export class WhatsappService implements OnModuleInit {
       }
 
       const zipBuffer = zip.toBuffer();
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const zipFileName = `whatsapp-session-backup-${timestamp}.zip`;
+      const zipFileName = 'whatsapp-session-latest.zip';
 
       await this.digitalOceanService.uploadFile(zipFileName, zipBuffer);
       
@@ -388,17 +503,39 @@ export class WhatsappService implements OnModuleInit {
 
   private async downloadLatestSession(): Promise<void> {
     try {
+      console.log('🔄 Descargando sesión desde DigitalOcean...');
       // Intentar descargar la sesión más reciente
       await this.downloadSession();
+      console.log('✅ Sesión descargada y extraída exitosamente');
     } catch (error) {
-      console.log('No existing session found in cloud, starting fresh');
+      console.log('❌ No se encontró sesión en la nube o falló la descarga');
       throw error;
     }
   }
 
+  /**
+   * Verifica si es necesario hacer backup (cada 4 horas)
+   */
+  private shouldBackup(): boolean {
+    const now = Date.now();
+    const timeSinceLastBackup = now - this.lastBackupTime;
+    const intervalMs = this.backupIntervalHours * 60 * 60 * 1000; // 4 horas en ms
+    
+    return timeSinceLastBackup >= intervalMs;
+  }
+
   private async autoBackupToCloud(): Promise<void> {
+    // Solo hacer backup si han pasado 4 horas
+    if (!this.shouldBackup()) {
+      const timeLeft = this.backupIntervalHours * 60 * 60 * 1000 - (Date.now() - this.lastBackupTime);
+      const hoursLeft = Math.round(timeLeft / (60 * 60 * 1000));
+      const minutesLeft = Math.round((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+      console.log(`⏰ Backup programado en ${hoursLeft}h ${minutesLeft}m`);
+      return;
+    }
+
     try {
-      console.log('Starting auto-backup to cloud...');
+      console.log('🔄 Starting scheduled auto-backup to cloud...');
       
       const AdmZip = require('adm-zip');
       const zip = new AdmZip();
@@ -440,18 +577,69 @@ export class WhatsappService implements OnModuleInit {
       }
 
       const zipBuffer = zip.toBuffer();
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `session-backup-${timestamp}.zip`;
       
+      // Guardar siempre como el mismo archivo en la raíz del bucket
       await this.digitalOceanService.uploadFile(
-        `session-backups/${fileName}`,
+        'whatsapp-session-latest.zip',
         zipBuffer
       );
       
-      console.log('Auto-backup to cloud completed successfully');
+      // Actualizar timestamp del último backup
+      this.lastBackupTime = Date.now();
+      
+      console.log('✅ Auto-backup to cloud completed successfully');
     } catch (error) {
-      console.error('Auto-backup to cloud failed:', error);
+      console.error('❌ Auto-backup to cloud failed:', error);
       // No lanzar error para no interrumpir el flujo principal
+    }
+  }
+
+  /**
+   * Envía un mensaje de texto simple (para pruebas) con retry logic
+   */
+  async sendSimpleTextMessage(jid: string, text: string): Promise<void> {
+    const maxRetries = 3;
+    const timeoutMs = 30000; // 30 segundos
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Verificar conexión antes de cada intento
+        if (!this.isConnected()) {
+          throw new Error('WhatsApp not connected');
+        }
+        
+        console.log(`📤 Sending message (attempt ${attempt}/${maxRetries}) to ${jid}`);
+        
+        // Crear promise con timeout
+        const sendPromise = this.socket.sendMessage(jid, { text });
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Message send timeout')), timeoutMs);
+        });
+        
+        await Promise.race([sendPromise, timeoutPromise]);
+        
+        console.log(`✅ Test message sent successfully to ${jid}: ${text}`);
+        return; // Éxito, salir del loop
+        
+      } catch (error) {
+        console.error(`❌ Error sending test message (attempt ${attempt}/${maxRetries}):`, error.message);
+        
+        // Si es error de conexión cerrada, no reintentar
+        if (error.message.includes('Connection Closed') || error.message.includes('WhatsApp not connected')) {
+          console.error('🚫 Connection lost, cannot retry message sending');
+          throw new Error(`Connection lost: ${error.message}`);
+        }
+        
+        // Si es el último intento, lanzar el error
+        if (attempt === maxRetries) {
+          throw new Error(`Failed to send message after ${maxRetries} attempts: ${error.message}`);
+        }
+        
+        // Esperar antes del siguiente intento (backoff exponencial)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 segundos
+        console.log(`⏳ Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
 
@@ -459,7 +647,28 @@ export class WhatsappService implements OnModuleInit {
    * Verifica si WhatsApp está conectado
    */
   isConnected(): boolean {
-    return this.connectionState === 'connected' && this.socket && this.socket.user !== null;
+    try {
+      const connected = this.socket && 
+                       this.socket.user !== null && 
+                       this.socket.user !== undefined;
+      
+      console.log('🔍 isConnected detailed check:', {
+        hasSocket: !!this.socket,
+        hasUser: !!this.socket?.user,
+        userId: this.socket?.user?.id,
+        socketState: this.socket?.user ? 'authenticated' : 'not authenticated',
+        wsReadyState: (this.socket?.ws as any)?.readyState,
+        isInitializing: this.isInitializing,
+        qrAttempts: this.qrAttempts,
+        maxQrAttempts: this.maxQrAttempts,
+        connected
+      });
+      
+      return connected;
+    } catch (error) {
+      console.error('❌ Error checking connection:', error.message);
+      return false;
+    }
   }
 
   /**
@@ -473,110 +682,94 @@ export class WhatsappService implements OnModuleInit {
   }
 
   /**
-   * Genera QR bajo demanda (siempre genera QR nuevo, sin importar sesión local)
+   * Reinicializa WhatsApp manualmente (para debugging)
    */
-
-  async generateQrOnDemand(force: boolean = false): Promise<string> {
-
-    // Si ya está conectado, devolver QR con "hola"
-    if (this.isConnected()) {
-      return 'hola';
+  async forceReinitialization(): Promise<void> {
+    console.log('🔄 Forzando reinicialización de WhatsApp...');
+    
+    try {
+      // Resetear flags
+      this.isInitializing = false;
+      this.qrAttempts = 0;
+      
+      // Reinicializar
+      await this.onModuleInit();
+      
+      console.log('✅ Reinicialización forzada completada');
+    } catch (error) {
+      console.error('❌ Error en reinicialización forzada:', error.message);
+      throw error;
     }
+  }
 
+  /**
+   * Genera QR on-demand (fuerza nueva generación)
+   */
+  async generateQrOnDemand(force: boolean = false): Promise<string> {
+    console.log('generateQrOnDemand', this.isConnected());
+    // Si ya está conectado, devolver "hola"
+    // if (this.isConnected()) {
+    //   return 'hola';
+    // }
 
-    // Si ya hemos excedido los intentos y no es forzado, no generar más QR
+    // Si no es forzado y ya alcanzamos el máximo de intentos
     if (!force && this.qrAttempts >= this.maxQrAttempts) {
       throw new Error('Máximo de intentos de QR alcanzado');
     }
 
-    console.log(`🔄 Generando QR bajo demanda ${force ? '(FORZADO)' : ''}(ignorando sesión local existente)...`);
+    console.log(`🔄 Generando QR on-demand ${force ? '(FORZADO)' : ''}...`);
 
+    // Limpiar QR anterior
+    this.appService.setQrCode('');
 
-    // Reiniciar conexión para generar nuevo QR
-    if (this.socket) {
-      await this.socket.logout();
+    // Si es forzado, resetear contador
+    if (force) {
+      this.qrAttempts = 0;
     }
 
-    // Crear nueva conexión
-    const { state, saveCreds } = await useMultiFileAuthState(this.SESSION_DIR);
-    
-    this.socket = makeWASocket({
-      auth: state,
-      printQRInTerminal: false,
-      connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 30000,
-      retryRequestDelayMs: 250,
-      maxMsgRetryCount: 5,
-      markOnlineOnConnect: true,
-      browser: ['VEP Sender', 'Chrome', '4.0.0'],
-    });
-
-    // Configurar eventos
-    this.socket.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      
-      if (qr) {
-        console.log('QR Code generated on demand');
-        this.appService.setQrCode(qr);
-        this.qrAttempts++;
-      }
-      
-      if (connection === 'close') {
-        const shouldReconnect =
-          (lastDisconnect?.error as Boom)?.output?.statusCode !==
-          DisconnectReason.loggedOut;
-        
-        if (shouldReconnect && this.qrAttempts < this.maxQrAttempts) {
-          console.log(`Reconectando... (intento ${this.qrAttempts}/${this.maxQrAttempts})`);
-        }
-      } else if (connection === 'open') {
-        console.log('WhatsApp connection opened');
-        this.qrAttempts = 0;
-      }
-    });
+    // Reinicializar conexión para generar nuevo QR
+    await this.onModuleInit();
 
     // Esperar un poco para que se genere el QR
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Devolver el QR generado
-    return this.appService.getQrCode() || 'Generando QR...';
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const currentQr = this.appService.getQrCode();
+        if (currentQr) {
+          resolve(currentQr);
+        } else {
+          reject(new Error('Timeout generando QR'));
+        }
+      }, 5000);
+    });
   }
 
   /**
    * Obtiene el QR actual o genera uno nuevo
    */
   async getQrCode(forceNew: boolean = false): Promise<string> {
+    console.log('getQrCode', this.isConnected());
     // Si ya está conectado, devolver "hola"
-    if (this.isConnected()) {
-      return 'hola';
-    }
+    // if (this.isConnected()) {
+    //   return 'hola';
+    // }
 
-    // Si se fuerza nuevo QR, saltar verificación de sesión local
+    // Si se fuerza nuevo QR
     if (forceNew) {
-      console.log('🔄 Forzando generación de nuevo QR...');
-
-      return await this.generateQrOnDemand(true); // Pasar force=true
-
+      return await this.generateQrOnDemand(true);
     }
 
-    // Verificar si hay una sesión válida local
-    try {
-      const { state } = await useMultiFileAuthState(this.SESSION_DIR);
-      if (state.creds && state.creds.me) {
-        console.log('✅ Sesión local válida encontrada, no se necesita QR');
-        return 'hola';
-      }
-    } catch (error) {
-      console.log('❌ No hay sesión local válida');
-    }
-
-    // Si hay un QR pendiente, devolverlo
+    // Si hay un QR actual, devolverlo
     const currentQr = this.appService.getQrCode();
     if (currentQr) {
       return currentQr;
     }
 
-    // Generar nuevo QR bajo demanda
-    return await this.generateQrOnDemand();
+    // Si no hay QR y no hemos alcanzado el límite, generar uno
+    if (this.qrAttempts < this.maxQrAttempts) {
+      return await this.generateQrOnDemand();
+    }
+
+    // Si ya alcanzamos el límite, devolver mensaje
+    return 'Máximo de intentos alcanzado. Use force=true para generar nuevo QR.';
   }
 }

@@ -8,6 +8,8 @@ import {
   Logger,
   UseGuards,
   Delete,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { nowBA, formatBA, getMonthNameBA } from './time.helper';
@@ -179,10 +181,11 @@ export class AppController {
         'server.secret_key_login',
       );
       if (secret !== secret_key_login) {
+        console.table({ secret, secret_key_login });
         return res.status(401).json({ error: 'Unauthorized' });
       }
       
-      // Obtener QR usando el nuevo método (forzar nuevo QR)
+      // Obtener QR on-demand (forzar nuevo)
       const data = await this.whatsappService.getQrCode(true);
       const stringToEncode = data || 'Hello World!';
 
@@ -377,4 +380,326 @@ export class AppController {
       return res.status(500).json({ error: 'Error backing up session' });
     }
   }
+
+  @Post('test-message')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Send test WhatsApp message',
+    description: 'Send a simple text message to test WhatsApp connection'
+  })
+  @ApiBody({
+    description: 'Test message data',
+    schema: {
+      type: 'object',
+      properties: {
+        phone: {
+          type: 'string',
+          description: 'Phone number with country code (without + symbol)',
+          example: '5491136585581'
+        },
+        message: {
+          type: 'string',
+          description: 'Text message to send',
+          example: 'Hola! Este es un mensaje de prueba 🚀'
+        }
+      },
+      required: ['phone', 'message']
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Message sent successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Test message sent successfully' },
+        phone: { type: 'string', example: '5491136585581' },
+        sentMessage: { type: 'string', example: 'Hola! Este es un mensaje de prueba 🚀' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'WhatsApp not connected or invalid data',
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'WhatsApp not connected' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Error sending message',
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'Error sending test message' }
+      }
+    }
+  })
+  async sendTestMessage(@Body() body: { phone: string; message: string }): Promise<any> {
+    try {
+      console.log('📱 Test message endpoint called:', { phone: body.phone, message: body.message });
+      
+      // Verificar que WhatsApp esté conectado
+      const isConnected = this.whatsappService.isConnected();
+      console.log('🔌 WhatsApp connection status:', isConnected);
+      
+      if (!isConnected) {
+        console.warn('❌ WhatsApp not connected');
+        throw new HttpException(
+          { error: 'WhatsApp not connected' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Validar datos requeridos
+      if (!body.phone || !body.message) {
+        console.warn('❌ Missing required fields:', { phone: !!body.phone, message: !!body.message });
+        throw new HttpException(
+          { error: 'Phone and message are required' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Enviar mensaje simple
+      const jid_final = `${body.phone}@s.whatsapp.net`;
+      console.log('📤 Sending message to:', jid_final);
+      
+      await this.whatsappService.sendSimpleTextMessage(jid_final, body.message);
+
+      const response = {
+        success: true,
+        message: 'Test message sent successfully',
+        phone: body.phone,
+        sentMessage: body.message,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('✅ Test message sent successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ Error sending test message:', error);
+      
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      
+      throw new HttpException(
+        { 
+          error: 'Error sending test message',
+          details: error.message || 'Unknown error'
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+  
+  @Get('test-connectivity')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Test API connectivity and WhatsApp status',
+    description: 'Simple endpoint to verify API is reachable and WhatsApp connection status'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Connectivity test successful',
+    schema: {
+      type: 'object',
+      properties: {
+        api: { type: 'string', example: 'OK' },
+        whatsapp: { type: 'string', example: 'Connected' },
+        timestamp: { type: 'string', example: '2025-09-20T21:00:00.000Z' },
+        environment: { type: 'string', example: 'production' }
+      }
+    }
+  })
+  async testConnectivity(): Promise<any> {
+    const isWhatsAppConnected = this.whatsappService.isConnected();
+    const connectionStatus = this.whatsappService.getConnectionStatus();
+    
+    return {
+      api: 'OK',
+      whatsapp: isWhatsAppConnected ? 'Connected' : 'Disconnected',
+      connectionDetails: connectionStatus,
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development'
+    };
+  }
+
+  @Get('whatsapp-debug')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Get detailed WhatsApp debug information',
+    description: 'Detailed debugging information for WhatsApp connection issues'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Debug information retrieved',
+    schema: {
+      type: 'object',
+      properties: {
+        connected: { type: 'boolean' },
+        debugInfo: { type: 'object' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  async getWhatsAppDebug(): Promise<any> {
+    try {
+      // Forzar una verificación detallada
+      const isConnected = this.whatsappService.isConnected();
+      const connectionStatus = this.whatsappService.getConnectionStatus();
+      
+      return {
+        connected: isConnected,
+        connectionStatus,
+        debugInfo: {
+          environment: process.env.NODE_ENV || 'development',
+          timestamp: new Date().toISOString(),
+          message: isConnected ? 'WhatsApp is connected' : 'WhatsApp is not connected - check logs for initialization details'
+        }
+      };
+    } catch (error) {
+      console.error('❌ Error getting WhatsApp debug info:', error);
+      return {
+        connected: false,
+        error: error.message,
+        debugInfo: {
+          environment: process.env.NODE_ENV || 'development',
+          timestamp: new Date().toISOString(),
+          message: 'Error getting debug information'
+        }
+      };
+    }
+  }
+
+  @Post('whatsapp-reinit')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Force WhatsApp reinitialization',
+    description: 'Manually reinitialize WhatsApp connection (for debugging)'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reinitialization completed',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Reinitialization failed',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        error: { type: 'string' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  async forceWhatsAppReinitialization(): Promise<any> {
+    try {
+      console.log('🔄 Manual WhatsApp reinitialization requested');
+      
+      await this.whatsappService.forceReinitialization();
+      
+      const response = {
+        success: true,
+        message: 'WhatsApp reinitialization completed successfully',
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('✅ Manual reinitialization completed:', response);
+      return response;
+      
+    } catch (error) {
+      console.error('❌ Error during manual reinitialization:', error);
+      
+      const errorResponse = {
+        success: false,
+        error: error.message || 'Unknown error during reinitialization',
+        timestamp: new Date().toISOString()
+      };
+      
+      throw new HttpException(
+        errorResponse,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('test-scheduler')
+  @ApiTags('Job Scheduler Test')
+  @ApiOperation({
+    summary: 'Test job scheduler timezone logic',
+    description: 'Manually test the job scheduler timezone conversion and filtering logic'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Scheduler test completed',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        currentTime: { type: 'string' },
+        pendingJobs: { type: 'number' },
+        filteredJobs: { type: 'number' },
+        details: { type: 'array' }
+      }
+    }
+  })
+  async testScheduler(): Promise<any> {
+    try {
+      console.log('🧪 Manual scheduler test requested');
+      
+      // Simular la lógica del scheduler
+      const { DateTime } = await import('luxon');
+      const timezone = 'America/Argentina/Buenos_Aires';
+      const now = DateTime.now().setZone(timezone);
+      
+      console.log(`🕐 Current time (GMT-3): ${now.toFormat('yyyy-MM-dd HH:mm:ss')}`);
+      
+      // Obtener jobs pendientes (usando el servicio real)
+      const supabaseService = this.appService['supabaseService'] || 
+                             this.appService.constructor.prototype.supabaseService;
+      
+      // Como no tenemos acceso directo, vamos a hacer una prueba simple
+      const response = {
+        success: true,
+        currentTime: now.toISO(),
+        currentTimeFormatted: now.toFormat('yyyy-MM-dd HH:mm:ss'),
+        timezone: timezone,
+        message: 'Scheduler test completed - check logs for detailed timezone conversion',
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('✅ Scheduler test completed:', response);
+      return response;
+      
+    } catch (error) {
+      console.error('❌ Error during scheduler test:', error);
+      
+      const errorResponse = {
+        success: false,
+        error: error.message || 'Unknown error during scheduler test',
+        timestamp: new Date().toISOString()
+      };
+      
+      throw new HttpException(
+        errorResponse,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+
 }

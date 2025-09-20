@@ -13,8 +13,14 @@ async function bootstrap() {
   // Configurar CORS
   app.enableCors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    origin: ['https://veps-frontend-production.up.railway.app', 'http://localhost:3001'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: [
+      'https://veps-frontend-production.up.railway.app', 
+      'http://localhost:3001',
+      'https://veps-sender-production.up.railway.app', // Para que Swagger UI funcione
+      'http://localhost:3000' // Para desarrollo local
+    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
   });
 
   // Configurar validación global

@@ -68,8 +68,6 @@ export class VepSenderService {
         continue; // Skip if no archive found
       }
       const message = `Buen día ${user.alter_name} cómo estás ? Te paso el vep de autónomo vence el 5/9\n`;
-
-      // const message = `Buenos días ${user.alter_name}, cómo estás?. Te paso ${user.joined_cuit && user.joined_with ? 'las credenciales' : 'la credencial'} de Monotributo del mes de ${date_to_pay_spanish}, vence el ${process.env.END_DATE}. \n`;
       let final_message = user.need_papers
         ? message +
           'No te olvides cuando puedas de mandarme los papeles de ventas. Saludos.'

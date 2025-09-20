@@ -9,6 +9,7 @@ import {
   UseGuards,
   Delete,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { nowBA, formatBA, getMonthNameBA } from './time.helper';
 import { AppService } from './app.service';
 import { Response } from 'express';
@@ -21,6 +22,7 @@ import { WhatsappService } from './whatsapp.service';
 import { VepSchedulerService } from './vep-scheduler.service';
 import { VepSenderService } from './vep-sender/vep-sender.service';
 
+@ApiTags('VEP Sender')
 @Controller()
 export class AppController {
   constructor(
@@ -35,11 +37,38 @@ export class AppController {
   ) {}
 
   @Get()
+  @ApiOperation({ 
+    summary: 'Health check',
+    description: 'Verifica el estado de la aplicación'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Aplicación funcionando correctamente',
+    schema: {
+      type: 'string',
+      example: 'Hello World!'
+    }
+  })
   getHello(): string {
     return this.appService.getHello();
   }
 
   @Delete('deleteSession')
+  @ApiOperation({ 
+    summary: 'Eliminar sesión de WhatsApp',
+    description: 'Elimina la sesión actual de WhatsApp'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Sesión eliminada exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Session deleted successfully' }
+      }
+    }
+  })
+  @ApiResponse({ status: 500, description: 'Error al eliminar sesión' })
   async deleteSession(@Res() res: Response): Promise<Response> {
     try {
       await this.whatsappService.deleteSession();
@@ -51,6 +80,39 @@ export class AppController {
   }
 
   @Post('sendMessageVep')
+  @ApiOperation({ 
+    summary: 'Enviar mensaje VEP por WhatsApp',
+    description: 'Envía un mensaje con archivo adjunto a través de WhatsApp'
+  })
+  @ApiBody({ 
+    type: 'object',
+    schema: {
+      type: 'object',
+      properties: {
+        jid: { type: 'string', example: '5491136585581@s.whatsapp.net', description: 'JID del destinatario' },
+        text: { type: 'string', example: 'Hola, aquí tienes tu archivo VEP', description: 'Mensaje de texto' },
+        fileName: { type: 'string', example: 'vep_documento.pdf', description: 'Nombre del archivo' },
+        archive: { type: 'string', example: 'JVBERi0xLjQK...', description: 'Archivo en base64' },
+        media: { type: 'string', example: 'application/pdf', description: 'Tipo de media (opcional)' },
+        isGroup: { type: 'boolean', example: false, description: 'Indica si es un grupo (opcional)' }
+      },
+      required: ['jid', 'text', 'fileName', 'archive']
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Mensaje enviado exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Mensaje enviado correctamente' },
+        messageId: { type: 'string', example: '3EB0C767D26A8B6A' }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - datos inválidos' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
   async sendMessageVepTest(
     @Res() res: Response,
     @Body()
@@ -83,6 +145,31 @@ export class AppController {
   }
 
   @Get('qr')
+  @ApiOperation({ 
+    summary: 'Generar código QR de WhatsApp',
+    description: 'Genera un código QR para conectar WhatsApp Web'
+  })
+  @ApiQuery({ 
+    name: 'secret', 
+    required: true, 
+    type: String, 
+    description: 'Clave secreta para autenticación',
+    example: 'your-secret-key'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Código QR generado exitosamente',
+    content: {
+      'image/png': {
+        schema: {
+          type: 'string',
+          format: 'binary'
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado - clave secreta inválida' })
+  @ApiResponse({ status: 500, description: 'Error al generar código QR' })
   async getQrCode(
     @Res() res: Response,
     @Query('secret') secret: string,
@@ -94,7 +181,9 @@ export class AppController {
       if (secret !== secret_key_login) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
-      const data = this.appService.getQrCode();
+      
+      // Obtener QR usando el nuevo método (forzar nuevo QR)
+      const data = await this.whatsappService.getQrCode(true);
       const stringToEncode = data || 'Hello World!';
 
       // Generate a PNG buffer from the input string
@@ -115,6 +204,33 @@ export class AppController {
 
   @UseGuards(AuthGuard)
   @Post('loadVep')
+  @ApiOperation({ 
+    summary: 'Cargar archivo VEP',
+    description: 'Sube un archivo PDF de VEP a Digital Ocean Spaces'
+  })
+  @ApiBody({ 
+    type: 'object',
+    schema: {
+      type: 'object',
+      properties: {
+        pdf: { type: 'string', example: 'JVBERi0xLjQK...', description: 'Archivo PDF en formato base64' },
+        name_pdf: { type: 'string', example: 'vep_documento.pdf', description: 'Nombre del archivo PDF' }
+      },
+      required: ['pdf', 'name_pdf']
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Archivo cargado exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'File uploaded successfully' }
+      }
+    }
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error al cargar archivo' })
   async loadVep(
     @Res() res: Response,
     @Body()
@@ -136,6 +252,47 @@ export class AppController {
   }
 
   @Post('uploadSession')
+  @ApiOperation({ 
+    summary: 'Subir archivos de sesión',
+    description: 'Sube archivos de sesión de WhatsApp a Digital Ocean Spaces'
+  })
+  @ApiBody({ 
+    type: 'object',
+    schema: {
+      type: 'object',
+      properties: {
+        sessionFiles: { 
+          type: 'object', 
+          additionalProperties: { type: 'string' },
+          example: { 'session': '{"key": "value"}' },
+          description: 'Archivos de sesión en formato base64'
+        },
+        backupCurrent: { 
+          type: 'boolean', 
+          example: true, 
+          description: 'Hacer backup de la sesión actual (opcional)' 
+        }
+      },
+      required: ['sessionFiles']
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Archivos de sesión subidos exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Session files uploaded successfully' },
+        uploadedFiles: { 
+          type: 'array', 
+          items: { type: 'string' },
+          example: ['session', 'creds.json']
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - archivos inválidos' })
+  @ApiResponse({ status: 500, description: 'Error al subir archivos de sesión' })
   async uploadSession(
     @Res() res: Response,
     @Body()

@@ -5,15 +5,15 @@ import { join } from 'path';
 const fetch = globalThis.fetch || require('node-fetch');
 
 /**
- * Script para convertir los archivos de la carpeta session.json
+ * Script para convertir los archivos de la carpeta session
  * en un formato que puede ser enviado al endpoint /uploadSession
  */
 
-async function prepareSessionFiles(sessionDir = './session.json') {
+async function prepareSessionFiles(sessionDir = './session') {
   try {
     const sessionFiles = {};
     
-    // Leer todos los archivos de la carpeta session.json
+    // Leer todos los archivos de la carpeta session
     const files = readdirSync(sessionDir);
     
     for (const file of files) {

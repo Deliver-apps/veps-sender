@@ -475,11 +475,14 @@ export class WhatsappService implements OnModuleInit {
   /**
    * Genera QR bajo demanda (siempre genera QR nuevo, sin importar sesión local)
    */
+
   async generateQrOnDemand(force: boolean = false): Promise<string> {
+
     // Si ya está conectado, devolver QR con "hola"
     if (this.isConnected()) {
       return 'hola';
     }
+
 
     // Si ya hemos excedido los intentos y no es forzado, no generar más QR
     if (!force && this.qrAttempts >= this.maxQrAttempts) {
@@ -487,6 +490,7 @@ export class WhatsappService implements OnModuleInit {
     }
 
     console.log(`🔄 Generando QR bajo demanda ${force ? '(FORZADO)' : ''}(ignorando sesión local existente)...`);
+
 
     // Reiniciar conexión para generar nuevo QR
     if (this.socket) {
@@ -550,7 +554,9 @@ export class WhatsappService implements OnModuleInit {
     // Si se fuerza nuevo QR, saltar verificación de sesión local
     if (forceNew) {
       console.log('🔄 Forzando generación de nuevo QR...');
+
       return await this.generateQrOnDemand(true); // Pasar force=true
+
     }
 
     // Verificar si hay una sesión válida local

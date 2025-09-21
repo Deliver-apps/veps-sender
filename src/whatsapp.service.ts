@@ -682,6 +682,36 @@ export class WhatsappService implements OnModuleInit {
   }
 
   /**
+   * Obtiene la lista de grupos de WhatsApp
+   */
+  async getGroups(): Promise<Array<{ id: string; name: string; participantsCount: number }>> {
+    try {
+      if (!this.isConnected()) {
+        throw new Error('WhatsApp not connected');
+      }
+
+      console.log('👥 Fetching WhatsApp groups...');
+      
+      // Obtener grupos usando Baileys
+      const groups = await this.socket.groupFetchAllParticipating();
+      
+      // Formatear la respuesta
+      const formattedGroups = Object.values(groups).map(group => ({
+        id: group.id,
+        name: group.subject || 'Sin nombre',
+        participantsCount: group.participants ? group.participants.length : 0
+      }));
+
+      console.log(`✅ Found ${formattedGroups.length} groups`);
+      return formattedGroups;
+      
+    } catch (error) {
+      console.error('❌ Error getting groups:', error.message);
+      throw new Error(`Failed to get groups: ${error.message}`);
+    }
+  }
+
+  /**
    * Reinicializa WhatsApp manualmente (para debugging)
    */
   async forceReinitialization(): Promise<void> {

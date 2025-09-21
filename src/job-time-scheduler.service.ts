@@ -23,7 +23,7 @@ export class JobTimeSchedulerService implements OnModuleInit {
     // Cron job que se ejecuta cada 10 minutos: */10 * * * *
     // Esto significa: minuto 0, 10, 20, 30, 40, 50 de cada hora
     new CronJob(
-      '*/10 * * * *', // Cada 10 minutos
+      '*/5 * * * *', // Cada 10 minutos
       async () => {
         await this.executePendingJobs();
       },
@@ -135,7 +135,7 @@ export class JobTimeSchedulerService implements OnModuleInit {
         
         // Caso 4: Job del mismo día, no muy antiguo, pero fuera del intervalo actual
         // Solo ejecutar si no es muy reciente (para evitar ejecuciones duplicadas)
-        if (timeDiff >= 10) { // Al menos 10 minutos de diferencia
+        if (timeDiff >= 2) { // Al menos 10 minutos de diferencia
           this.logger.log(`🔄 Job ${job.id} programado para ${jobTime.toFormat('HH:mm')} ejecutándose con retraso (${Math.round(timeDiff)} min atrás)`);
           return true;
         }
@@ -334,7 +334,8 @@ export class JobTimeSchedulerService implements OnModuleInit {
    */
   private generateMessage(user: Database['public']['Tables']['vep_users']['Row'], job: Database['public']['Tables']['job_time']['Row']) {
     const now = DateTime.now().setZone(this.timezone);
-    const currentMonth = now.toFormat('MMMM', { locale: 'es' });
+    // const currentMonth = now.toFormat('MMMM', { locale: 'es' });
+    const currentYear = now.toFormat('yyyy');
     const nextMonth = now.plus({ months: 1 }).toFormat('MMMM', { locale: 'es' });
 
     let message = '';
@@ -344,10 +345,10 @@ export class JobTimeSchedulerService implements OnModuleInit {
         message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso el vep de autónomo vence ${job.caducate ?? nextMonth}.\n`;
         break;
       case 'credencial':
-        message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso el VEP del mes ${currentMonth}, vence en ${job.caducate ?? nextMonth}.\n`;
+        message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso la credencial del monotributo de ${nextMonth} ${currentYear}, vence el ${job.caducate ?? nextMonth}.\n`;
         break;
       case 'monotributo':
-        message = `Hola ${user.alter_name}, buenos días, cómo estás?.  Te paso la credencial de Monotributo del mes de ${currentMonth}, vence el ${nextMonth}.\n`;
+        message = `Hola ${user.alter_name}, buenos días, cómo estás?. Te paso el vep del monotributo del mes de ${nextMonth} ${currentYear}, vence el ${job.caducate ?? nextMonth}.\n`;
         break;
       default:
         throw new Error('Tipo de job no válido');

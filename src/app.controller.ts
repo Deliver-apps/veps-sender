@@ -385,7 +385,7 @@ export class AppController {
   @ApiTags('WhatsApp Test')
   @ApiOperation({
     summary: 'Send test WhatsApp message',
-    description: 'Send a simple text message to test WhatsApp connection'
+    description: 'Send a simple text message to individual contacts or groups. For groups, use the Group ID (can be obtained from GET /groups endpoint)'
   })
   @ApiBody({
     description: 'Test message data',
@@ -394,13 +394,18 @@ export class AppController {
       properties: {
         phone: {
           type: 'string',
-          description: 'Phone number with country code (without + symbol)',
+          description: 'Phone number with country code (without + symbol) or Group ID',
           example: '5491136585581'
         },
         message: {
           type: 'string',
           description: 'Text message to send',
           example: 'Hola! Este es un mensaje de prueba 🚀'
+        },
+        isGroup: {
+          type: 'boolean',
+          description: 'Set to true if sending to a group (phone field should contain group ID)',
+          example: false
         }
       },
       required: ['phone', 'message']
@@ -415,7 +420,9 @@ export class AppController {
         success: { type: 'boolean', example: true },
         message: { type: 'string', example: 'Test message sent successfully' },
         phone: { type: 'string', example: '5491136585581' },
-        sentMessage: { type: 'string', example: 'Hola! Este es un mensaje de prueba 🚀' }
+        sentMessage: { type: 'string', example: 'Hola! Este es un mensaje de prueba 🚀' },
+        isGroup: { type: 'boolean', example: false },
+        jid: { type: 'string', example: '5491136585581@s.whatsapp.net' }
       }
     }
   })
@@ -439,9 +446,13 @@ export class AppController {
       }
     }
   })
-  async sendTestMessage(@Body() body: { phone: string; message: string }): Promise<any> {
+  async sendTestMessage(@Body() body: { phone: string; message: string; isGroup?: boolean }): Promise<any> {
     try {
-      console.log('📱 Test message endpoint called:', { phone: body.phone, message: body.message });
+      console.log('📱 Test message endpoint called:', { 
+        phone: body.phone, 
+        message: body.message, 
+        isGroup: body.isGroup || false 
+      });
       
       // Verificar que WhatsApp esté conectado
       const isConnected = this.whatsappService.isConnected();
@@ -464,17 +475,37 @@ export class AppController {
         );
       }
 
-      // Enviar mensaje simple
-      const jid_final = `${body.phone}@s.whatsapp.net`;
-      console.log('📤 Sending message to:', jid_final);
+      // Construir JID según si es grupo o contacto individual
+      let jid_final: string;
+      const isGroup = body.isGroup || false;
+      
+      if (isGroup) {
+        // Para grupos: usar el Group ID tal como viene (ya debería incluir @g.us)
+        if (body.phone.includes('@g.us')) {
+          jid_final = body.phone;
+        } else {
+          jid_final = `${body.phone}@g.us`;
+        }
+        console.log('👥 Sending message to GROUP:', jid_final);
+      } else {
+        // Para contactos individuales: agregar @s.whatsapp.net
+        if (body.phone.includes('@s.whatsapp.net')) {
+          jid_final = body.phone;
+        } else {
+          jid_final = `${body.phone}@s.whatsapp.net`;
+        }
+        console.log('👤 Sending message to CONTACT:', jid_final);
+      }
       
       await this.whatsappService.sendSimpleTextMessage(jid_final, body.message);
 
       const response = {
         success: true,
-        message: 'Test message sent successfully',
+        message: `Test message sent successfully to ${isGroup ? 'group' : 'contact'}`,
         phone: body.phone,
         sentMessage: body.message,
+        isGroup: isGroup,
+        jid: jid_final,
         timestamp: new Date().toISOString()
       };
       
@@ -632,6 +663,90 @@ export class AppController {
       
       throw new HttpException(
         errorResponse,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('groups')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Get WhatsApp groups',
+    description: 'Retrieve list of WhatsApp groups for testing purposes'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Groups retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        groups: { 
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', example: '1234567890-1234567890@g.us' },
+              name: { type: 'string', example: 'Mi Grupo de Prueba' },
+              participantsCount: { type: 'number', example: 5 }
+            }
+          }
+        },
+        count: { type: 'number', example: 3 }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'WhatsApp not connected',
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'WhatsApp not connected' }
+      }
+    }
+  })
+  async getGroups(): Promise<any> {
+    try {
+      console.log('👥 Groups list requested');
+      
+      // Verificar que WhatsApp esté conectado
+      const isConnected = this.whatsappService.isConnected();
+      console.log('🔌 WhatsApp connection status:', isConnected);
+      
+      if (!isConnected) {
+        console.warn('❌ WhatsApp not connected');
+        throw new HttpException(
+          { error: 'WhatsApp not connected' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Obtener grupos desde WhatsappService
+      const groups = await this.whatsappService.getGroups();
+
+      const response = {
+        success: true,
+        groups: groups,
+        count: groups.length,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log(`✅ Groups retrieved successfully: ${groups.length} groups found`);
+      return response;
+      
+    } catch (error) {
+      console.error('❌ Error getting groups:', error);
+      
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      
+      throw new HttpException(
+        { 
+          error: 'Error retrieving groups',
+          details: error.message || 'Unknown error'
+        },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

@@ -78,7 +78,6 @@ export class CreateVepUserDto {
   })
   @IsString()
   @IsNotEmpty()
-  @IsPhoneNumber('AR')
   mobile_number: string;
 
   @ApiPropertyOptional({

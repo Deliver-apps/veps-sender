@@ -1,8 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState,
-} from '@whiskeysockets/baileys';
+import makeWASocket from '@whiskeysockets/baileys';
+import { DisconnectReason, GroupMetadata } from '@whiskeysockets/baileys/lib/Types';
+import { useMultiFileAuthState } from '@whiskeysockets/baileys/lib/Utils/use-multi-file-auth-state';
 import { Boom } from '@hapi/boom';
 import { AppService } from './app.service';
 import { DigitalOceanService } from './digitalOcean.service';
@@ -21,6 +20,10 @@ export class WhatsappService implements OnModuleInit {
   private lastBackupTime: number = 0;
   private backupIntervalHours: number = 4;
   private isInitializing: boolean = false;
+  private downloadAttempts: number = 0;
+  private maxDownloadAttempts: number = 3;
+  private reconnectionAttempts: number = 0;
+  private maxReconnectionAttempts: number = 3;
 
   constructor(
     private appService: AppService,
@@ -82,14 +85,31 @@ export class WhatsappService implements OnModuleInit {
       console.log('❌ No se encontró directorio de sesión local');
     }
 
-    // Solo descargar si no hay sesión local válida
-    if (!hasValidLocalSession) {
+    // Solo descargar si no hay sesión local válida y no hemos excedido los intentos
+    if (!hasValidLocalSession && this.downloadAttempts < this.maxDownloadAttempts) {
       try {
-        console.log('📥 Intentando descargar sesión de la nube...');
+        console.log(`📥 Intentando descargar sesión de la nube... (intento ${this.downloadAttempts + 1}/${this.maxDownloadAttempts})`);
+        this.downloadAttempts++;
         await this.downloadLatestSession();
         console.log('✅ Sesión descargada exitosamente de la nube');
+        this.downloadAttempts = 0; // Reset contador al éxito
+        hasValidLocalSession = true; // Marcar que ahora tenemos sesión válida
       } catch (error) {
-        console.log('❌ No se encontró sesión en la nube o falló la descarga, iniciando sesión nueva');
+        console.log(`❌ No se encontró sesión en la nube o falló la descarga (intento ${this.downloadAttempts}/${this.maxDownloadAttempts}), iniciando sesión nueva`);
+      }
+    } else if (this.downloadAttempts >= this.maxDownloadAttempts) {
+      console.log('❌ Máximo de intentos de descarga alcanzado, iniciando sesión nueva');
+    }
+
+    // Si no hay sesión válida (ni local ni de la nube), limpiar completamente el directorio
+    if (!hasValidLocalSession) {
+      try {
+        console.log('🧹 Limpiando directorio de sesión para empezar de cero...');
+        await this.deleteSession();
+        await fs.mkdir(this.SESSION_DIR, { recursive: true });
+        console.log('✅ Directorio de sesión limpiado, listo para generar nuevo QR');
+      } catch (error) {
+        console.log('⚠️ Error limpiando sesión:', error.message);
       }
     }
 
@@ -98,22 +118,22 @@ export class WhatsappService implements OnModuleInit {
     this.socket = makeWASocket({
       auth: state,
       printQRInTerminal: false,
-      // Configuraciones mejoradas para evitar timeouts
-      // connectTimeoutMs: 60000, // 60 segundos para conexión
-      // defaultQueryTimeoutMs: 30000, // 30 segundos para queries (reducido)
-      // keepAliveIntervalMs: 30000, // Keep alive cada 30 segundos
-      // retryRequestDelayMs: 1000, // 1 segundo entre reintentos
-      // maxMsgRetryCount: 3, // Reducido a 3 reintentos
-      // markOnlineOnConnect: true,
-      // browser: ['VEP Sender', 'Chrome', '4.0.0'],
+      // Configuraciones mejoradas para evitar timeouts y errores de conexión
+      connectTimeoutMs: 60000, // 60 segundos para conexión inicial
+      defaultQueryTimeoutMs: 60000, // 60 segundos para queries
+      keepAliveIntervalMs: 30000, // Keep alive cada 30 segundos
+      retryRequestDelayMs: 2000, // 2 segundos entre reintentos
+      qrTimeout: 60000, // 60 segundos de timeout para QR
+      markOnlineOnConnect: false, // No marcar online automáticamente
+      browser: ['VEP Sender', 'Chrome', '120.0.0'], // Identificador del browser
       // Configuraciones adicionales para estabilidad
-      // generateHighQualityLinkPreview: false,
-      // syncFullHistory: false,
-      // // Configuraciones para reducir timeouts internos
-      // getMessage: async (key) => {
-      //   // Devolver undefined para evitar queries innecesarias
-      //   return undefined;
-      // },
+      generateHighQualityLinkPreview: false,
+      syncFullHistory: false,
+      // Configuraciones para reducir timeouts internos
+      getMessage: async (key) => {
+        // Devolver undefined para evitar queries innecesarias
+        return undefined;
+      },
     });
      
     // Enhance saveCreds to auto-backup to cloud
@@ -171,6 +191,15 @@ export class WhatsappService implements OnModuleInit {
         
         console.log(`🔍 Conexión cerrada - StatusCode: ${statusCode}, Message: ${errorMessage}`);
         
+        // StatusCode 405 = Connection Failure - puede indicar conflicto o problema de red
+        if (statusCode === 405) {
+          console.log('⚠️ Error 405 detectado: Posibles causas:');
+          console.log('   1. Hay otra sesión de WhatsApp Web abierta con este número');
+          console.log('   2. Problema de conectividad con los servidores de WhatsApp');
+          console.log('   3. La sesión anterior no se cerró correctamente');
+          console.log('💡 Solución: Cierra todas las sesiones de WhatsApp Web y espera 30 segundos antes de reintentar');
+        }
+        
         // No reconectar en casos específicos que causan bucles infinitos
         const shouldNotReconnect = 
           statusCode === DisconnectReason.loggedOut ||
@@ -199,20 +228,29 @@ export class WhatsappService implements OnModuleInit {
           return;
         }
         
-        // Reconectar solo si no hemos excedido los intentos y el error es recuperable
-        if (this.qrAttempts < this.maxQrAttempts) {
-          console.log(`🔄 Reconectando... (intento ${this.qrAttempts + 1}/${this.maxQrAttempts})`);
+        // Reconectar solo si no hemos excedido los intentos de reconexión
+        if (this.reconnectionAttempts < this.maxReconnectionAttempts) {
+          this.reconnectionAttempts++;
+          console.log(`🔄 Reconectando... (intento ${this.reconnectionAttempts}/${this.maxReconnectionAttempts})`);
           // Esperar un poco antes de reconectar para evitar spam
           setTimeout(() => {
-            this.onModuleInit();
+            // Solo reinicializar si no hay una inicialización en progreso
+            if (!this.isInitializing) {
+              this.onModuleInit();
+            } else {
+              console.log('⚠️ Ya hay una inicialización en progreso, omitiendo reconexión...');
+            }
           }, 5000); // 5 segundos de espera
         } else {
-          console.log('❌ Máximo de intentos de QR alcanzado. No se reconectará automáticamente.');
-          console.log('💡 Usa el endpoint /qr-code para generar un nuevo QR');
+          console.log('❌ Máximo de intentos de reconexión alcanzado. No se reconectará automáticamente.');
+          console.log('💡 Usa el endpoint /qr-code para generar un nuevo QR o reinicia el servicio');
+          console.log('💡 Si el problema persiste, verifica que no haya conflictos con otras sesiones');
         }
       } else if (connection === 'open') {
         console.log('WhatsApp connection established!');
         this.qrAttempts = 0; // Reset contador al conectar exitosamente
+        this.downloadAttempts = 0; // Reset contador de descarga al conectar exitosamente
+        this.reconnectionAttempts = 0; // Reset contador de reconexión al conectar exitosamente
         // Backup session when successfully connected
         console.log('Backing up session to cloud...', this.configService.get<string>('server.node_env'));
         if(this.configService.get<string>('server.node_env') === 'production') {
@@ -509,7 +547,8 @@ export class WhatsappService implements OnModuleInit {
       console.log('✅ Sesión descargada y extraída exitosamente');
     } catch (error) {
       console.log('❌ No se encontró sesión en la nube o falló la descarga');
-      throw error;
+      // No relanzar el error para evitar bucles infinitos
+      // Simplemente continuar sin sesión de la nube
     }
   }
 
@@ -696,7 +735,7 @@ export class WhatsappService implements OnModuleInit {
       const groups = await this.socket.groupFetchAllParticipating();
       
       // Formatear la respuesta
-      const formattedGroups = Object.values(groups).map(group => ({
+      const formattedGroups = Object.values(groups).map((group: GroupMetadata) => ({
         id: group.id,
         name: group.subject || 'Sin nombre',
         participantsCount: group.participants ? group.participants.length : 0
@@ -721,6 +760,8 @@ export class WhatsappService implements OnModuleInit {
       // Resetear flags
       this.isInitializing = false;
       this.qrAttempts = 0;
+      this.downloadAttempts = 0;
+      this.reconnectionAttempts = 0;
       
       // Reinicializar
       await this.onModuleInit();
@@ -752,24 +793,25 @@ export class WhatsappService implements OnModuleInit {
     // Limpiar QR anterior
     this.appService.setQrCode('');
 
-    // Si es forzado, resetear contador
+    // Si es forzado, resetear contadores
     if (force) {
       this.qrAttempts = 0;
+      this.reconnectionAttempts = 0;
     }
 
     // Reinicializar conexión para generar nuevo QR
     await this.onModuleInit();
 
-    // Esperar un poco para que se genere el QR
+    // Esperar un poco para que se genere el QR (aumentado a 15 segundos)
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         const currentQr = this.appService.getQrCode();
         if (currentQr) {
           resolve(currentQr);
         } else {
-          reject(new Error('Timeout generando QR'));
+          reject(new Error('Timeout generando QR. La conexión puede estar fallando. Verifica que no haya otra sesión activa.'));
         }
-      }, 5000);
+      }, 15000); // Aumentado de 5 a 15 segundos
     });
   }
 

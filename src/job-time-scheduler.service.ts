@@ -295,9 +295,7 @@ export class JobTimeSchedulerService implements OnModuleInit {
       }
 
       // Generar nombre de archivo con timestamp
-      const now = DateTime.now().setZone(this.timezone);
-      const timestamp = now.toFormat('yyyyMMdd-HHmmss');
-      const vepFileName = `vep_${timestamp}.pdf`;
+      const vepFileName = `${user.real_name} [${user.cuit}].pdf`;
 
       // Enviar mensaje con archivos encontrados
       if (archives.length === 1) {
@@ -315,9 +313,9 @@ export class JobTimeSchedulerService implements OnModuleInit {
         return await this.whatsappService.sendMultipleDocuments(
           user.mobile_number,
           message,
-          archives.map((archive, _) => ({
+          archives.map((archive, index) => ({
             archive,
-            fileName: vepFileName,
+            fileName: index === 0 ? vepFileName : `${user.joined_users[index - 1].name} [${user.joined_users[index - 1].cuit}].pdf`,
             mimetype: 'application/pdf'
           })),
           user.is_group

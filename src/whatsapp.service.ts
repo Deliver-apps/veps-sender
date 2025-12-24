@@ -285,7 +285,21 @@ export class WhatsappService implements OnModuleInit {
     media?: string,
     isGroup?: boolean,
   ) {
-    const jid_final = isGroup ? `${jid}@g.us` : `${jid}@s.whatsapp.net`;
+    // Formatear JID correctamente, evitando duplicados
+    let jid_final: string;
+    if (jid.includes('@')) {
+      // Si ya tiene @, usar tal cual (pero limpiar duplicados si existen)
+      jid_final = jid;
+      if (jid_final.includes('@s.whatsapp.net@s.whatsapp.net')) {
+        jid_final = jid_final.replace('@s.whatsapp.net@s.whatsapp.net', '@s.whatsapp.net');
+      }
+      if (jid_final.includes('@g.us@g.us')) {
+        jid_final = jid_final.replace('@g.us@g.us', '@g.us');
+      }
+    } else {
+      // Si no tiene @, agregarlo según el tipo
+      jid_final = isGroup ? `${jid}@g.us` : `${jid}@s.whatsapp.net`;
+    }
     console.table({ jid_final, text, fileName, archive: archive?.length, media, isGroup });
     
     const maxRetries = 3;

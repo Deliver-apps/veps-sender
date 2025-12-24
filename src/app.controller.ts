@@ -903,9 +903,21 @@ export class AppController {
       const imageBuffer = await fs.readFile(imagePath);
       
       // Formatear el número de teléfono (agregar @s.whatsapp.net si no lo tiene)
-      const jid = phoneNumber.includes('@') 
-        ? phoneNumber 
-        : `${phoneNumber}@${isGroup ? 'g.us' : 's.whatsapp.net'}`;
+      let jid: string;
+      if (phoneNumber.includes('@')) {
+        // Si ya tiene @, usar tal cual (pero verificar que no esté duplicado)
+        jid = phoneNumber;
+        // Si tiene @s.whatsapp.net@s.whatsapp.net, limpiarlo
+        if (jid.includes('@s.whatsapp.net@s.whatsapp.net')) {
+          jid = jid.replace('@s.whatsapp.net@s.whatsapp.net', '@s.whatsapp.net');
+        }
+        if (jid.includes('@g.us@g.us')) {
+          jid = jid.replace('@g.us@g.us', '@g.us');
+        }
+      } else {
+        // Si no tiene @, agregarlo según el tipo
+        jid = `${phoneNumber}@${isGroup ? 'g.us' : 's.whatsapp.net'}`;
+      }
 
       // Enviar la imagen usando el servicio de WhatsApp
       await this.whatsappService.sendMessageVep(
@@ -1037,6 +1049,155 @@ export class AppController {
       this.logger.error('Error enviando mensajes a todos los usuarios:', error);
       return res.status(500).json({ 
         error: 'Error enviando mensajes',
+        details: error.message 
+      });
+    }
+  }
+
+  @Post('send-image-to-all/:imageName')
+  @ApiOperation({ 
+    summary: 'Enviar imagen a todos los usuarios principales',
+    description: 'Envía una imagen desde la raíz del proyecto a todos los usuarios principales (dueños) de la base de datos. Los usuarios con joined_users solo recibirán UNA imagen, no múltiples.'
+  })
+  @ApiParam({
+    name: 'imageName',
+    description: 'Nombre de la imagen en la raíz del proyecto (ej: navidad.jpeg)',
+    example: 'navidad.jpeg',
+    type: String,
+  })
+  @ApiBody({ 
+    type: 'object',
+    schema: {
+      type: 'object',
+      properties: {
+        caption: { 
+          type: 'string', 
+          example: '¡Feliz Navidad!', 
+          description: 'Texto que acompaña a la imagen (opcional)' 
+        }
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Imágenes enviadas exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Proceso de envío completado' },
+        totalUsers: { type: 'number', example: 50 },
+        successful: { type: 'number', example: 48 },
+        failed: { type: 'number', example: 2 }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - datos inválidos' })
+  @ApiResponse({ status: 404, description: 'Imagen no encontrada' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
+  async sendImageToAll(
+    @Param('imageName') imageName: string,
+    @Res() res: Response,
+    @Body()
+    body: {
+      caption?: string;
+    },
+  ): Promise<Response> {
+    try {
+      const { caption = '' } = body;
+      
+      // Construir la ruta de la imagen en la raíz del proyecto
+      const imagePath = path.join(process.cwd(), imageName);
+      
+      // Verificar si la imagen existe
+      try {
+        await fs.access(imagePath);
+      } catch (error) {
+        this.logger.error(`Imagen no encontrada: ${imagePath}`);
+        return res.status(404).json({ 
+          error: `Imagen no encontrada: ${imageName}`,
+          path: imagePath
+        });
+      }
+
+      // Leer la imagen como Buffer
+      const imageBuffer = await fs.readFile(imagePath);
+      
+      // Obtener todos los usuarios de la base de datos
+      const users = await this.supabaseService.getVepUsers();
+      
+      if (!users || users.length === 0) {
+        return res.status(404).json({ 
+          error: 'No se encontraron usuarios en la base de datos' 
+        });
+      }
+
+      this.logger.log(`Enviando imagen ${imageName} a ${users.length} usuarios principales...`);
+
+      const results = {
+        successful: 0,
+        failed: 0,
+        errors: [] as Array<{ userId: number; userName: string; error: string }>,
+      };
+
+      // Enviar imagen solo a usuarios principales (ignorar joined_users)
+      for (const user of users) {
+        try {
+          // Formatear el número de teléfono del usuario principal
+          let jid: string;
+          if (user.mobile_number.includes('@')) {
+            jid = user.mobile_number;
+            // Limpiar duplicados si existen
+            if (jid.includes('@s.whatsapp.net@s.whatsapp.net')) {
+              jid = jid.replace('@s.whatsapp.net@s.whatsapp.net', '@s.whatsapp.net');
+            }
+            if (jid.includes('@g.us@g.us')) {
+              jid = jid.replace('@g.us@g.us', '@g.us');
+            }
+          } else {
+            jid = `${user.mobile_number}@${user.is_group ? 'g.us' : 's.whatsapp.net'}`;
+          }
+
+          // Enviar imagen solo al usuario principal (dueño)
+          // NO se envía a los joined_users
+          await this.whatsappService.sendMessageVep(
+            jid,
+            caption,
+            imageName,
+            imageBuffer,
+            'image',
+            user.is_group,
+          );
+          
+          results.successful++;
+          
+          // Pequeña pausa entre mensajes para evitar spam
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+        } catch (error) {
+          this.logger.error(`Error enviando imagen a usuario ${user.id} (${user.real_name}):`, error.message);
+          results.failed++;
+          results.errors.push({
+            userId: user.id,
+            userName: user.real_name,
+            error: error.message,
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Proceso de envío de imagen completado',
+        imageName,
+        totalUsers: users.length,
+        successful: results.successful,
+        failed: results.failed,
+        errors: results.errors.length > 0 ? results.errors : undefined,
+      });
+    } catch (error) {
+      this.logger.error('Error enviando imágenes a todos los usuarios:', error);
+      return res.status(500).json({ 
+        error: 'Error enviando imágenes',
         details: error.message 
       });
     }

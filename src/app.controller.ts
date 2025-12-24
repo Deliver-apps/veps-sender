@@ -10,8 +10,9 @@ import {
   Delete,
   HttpException,
   HttpStatus,
+  Param,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { nowBA, formatBA, getMonthNameBA } from './time.helper';
 import { AppService } from './app.service';
 import { Response } from 'express';
@@ -23,6 +24,8 @@ import { AuthGuard } from './guards/auth.guard';
 import { WhatsappService } from './whatsapp.service';
 import { VepSchedulerService } from './vep-scheduler.service';
 import { VepSenderService } from './vep-sender/vep-sender.service';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 @ApiTags('VEP Sender')
 @Controller()
@@ -816,5 +819,227 @@ export class AppController {
     }
   }
 
+  @Post('send-image/:imageName')
+  @ApiOperation({ 
+    summary: 'Enviar imagen a un número específico',
+    description: 'Envía una imagen desde la raíz del proyecto a un número de WhatsApp específico'
+  })
+  @ApiParam({
+    name: 'imageName',
+    description: 'Nombre de la imagen en la raíz del proyecto (ej: navidad.jpeg)',
+    example: 'navidad.jpeg',
+    type: String,
+  })
+  @ApiBody({ 
+    type: 'object',
+    schema: {
+      type: 'object',
+      properties: {
+        phoneNumber: { 
+          type: 'string', 
+          example: '5491136585581', 
+          description: 'Número de teléfono sin @s.whatsapp.net (se agregará automáticamente)' 
+        },
+        caption: { 
+          type: 'string', 
+          example: 'Mensaje con imagen', 
+          description: 'Texto que acompaña a la imagen (opcional)' 
+        },
+        isGroup: { 
+          type: 'boolean', 
+          example: false, 
+          description: 'Indica si es un grupo (opcional)' 
+        }
+      },
+      required: ['phoneNumber']
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Imagen enviada exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Imagen enviada correctamente' }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - datos inválidos' })
+  @ApiResponse({ status: 404, description: 'Imagen no encontrada' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
+  async sendImage(
+    @Param('imageName') imageName: string,
+    @Res() res: Response,
+    @Body()
+    body: {
+      phoneNumber: string;
+      caption?: string;
+      isGroup?: boolean;
+    },
+  ): Promise<Response> {
+    try {
+      const { phoneNumber, caption = '', isGroup = false } = body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ error: 'El número de teléfono es requerido' });
+      }
+
+      // Construir la ruta de la imagen en la raíz del proyecto
+      const imagePath = path.join(process.cwd(), imageName);
+      
+      // Verificar si la imagen existe
+      try {
+        await fs.access(imagePath);
+      } catch (error) {
+        this.logger.error(`Imagen no encontrada: ${imagePath}`);
+        return res.status(404).json({ 
+          error: `Imagen no encontrada: ${imageName}`,
+          path: imagePath
+        });
+      }
+
+      // Leer la imagen como Buffer
+      const imageBuffer = await fs.readFile(imagePath);
+      
+      // Formatear el número de teléfono (agregar @s.whatsapp.net si no lo tiene)
+      const jid = phoneNumber.includes('@') 
+        ? phoneNumber 
+        : `${phoneNumber}@${isGroup ? 'g.us' : 's.whatsapp.net'}`;
+
+      // Enviar la imagen usando el servicio de WhatsApp
+      await this.whatsappService.sendMessageVep(
+        jid,
+        caption,
+        imageName,
+        imageBuffer,
+        'image',
+        isGroup,
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Imagen enviada correctamente',
+        phoneNumber: jid,
+        imageName,
+      });
+    } catch (error) {
+      this.logger.error('Error enviando imagen:', error);
+      return res.status(500).json({ 
+        error: 'Error enviando imagen',
+        details: error.message 
+      });
+    }
+  }
+
+  @Post('send-message-to-all')
+  @ApiOperation({ 
+    summary: 'Enviar mensaje a todos los usuarios de la base de datos',
+    description: 'Envía un mensaje de texto a todos los usuarios VEP registrados en la base de datos'
+  })
+  @ApiBody({ 
+    type: 'object',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { 
+          type: 'string', 
+          example: 'Hola, este es un mensaje para todos', 
+          description: 'Mensaje de texto a enviar a todos los usuarios' 
+        }
+      },
+      required: ['message']
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Mensajes enviados exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Mensajes enviados correctamente' },
+        totalUsers: { type: 'number', example: 50 },
+        successful: { type: 'number', example: 48 },
+        failed: { type: 'number', example: 2 }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta - datos inválidos' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
+  async sendMessageToAll(
+    @Res() res: Response,
+    @Body()
+    body: {
+      message: string;
+    },
+  ): Promise<Response> {
+    try {
+      const { message } = body;
+      
+      if (!message) {
+        return res.status(400).json({ error: 'El mensaje es requerido' });
+      }
+
+      // Obtener todos los usuarios de la base de datos
+      const users = await this.supabaseService.getVepUsers();
+      
+      if (!users || users.length === 0) {
+        return res.status(404).json({ 
+          error: 'No se encontraron usuarios en la base de datos' 
+        });
+      }
+
+      this.logger.log(`Enviando mensaje a ${users.length} usuarios...`);
+
+      const results = {
+        successful: 0,
+        failed: 0,
+        errors: [] as Array<{ userId: number; userName: string; error: string }>,
+      };
+
+      // Enviar mensaje a cada usuario
+      for (const user of users) {
+        try {
+          // Formatear el número de teléfono
+          const jid = user.mobile_number.includes('@') 
+            ? user.mobile_number 
+            : `${user.mobile_number}@${user.is_group ? 'g.us' : 's.whatsapp.net'}`;
+
+          // Enviar mensaje de texto simple
+          await this.whatsappService.sendSimpleTextMessage(jid, message);
+          
+          results.successful++;
+          
+          // Pequeña pausa entre mensajes para evitar spam
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+        } catch (error) {
+          this.logger.error(`Error enviando mensaje a usuario ${user.id} (${user.real_name}):`, error.message);
+          results.failed++;
+          results.errors.push({
+            userId: user.id,
+            userName: user.real_name,
+            error: error.message,
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Proceso de envío completado',
+        totalUsers: users.length,
+        successful: results.successful,
+        failed: results.failed,
+        errors: results.errors.length > 0 ? results.errors : undefined,
+      });
+    } catch (error) {
+      this.logger.error('Error enviando mensajes a todos los usuarios:', error);
+      return res.status(500).json({ 
+        error: 'Error enviando mensajes',
+        details: error.message 
+      });
+    }
+  }
 
 }

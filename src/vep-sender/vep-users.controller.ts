@@ -124,6 +124,38 @@ export class VepUsersController {
   }
 
   /**
+   * Obtiene usuarios VEP con filtros opcionales (sin paginación)
+   * @param search Término de búsqueda opcional (coincidencias parciales case-insensitive)
+   * @param field Campo específico para buscar (opcional)
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial' o 'monotributo'
+   * @returns Lista completa de usuarios filtrados
+   */
+  @Get('filtered')
+  @ApiOperation({ 
+    summary: 'Obtener usuarios VEP filtrados (sin paginación)',
+    description: 'Retorna todos los usuarios VEP que coincidan con los filtros aplicados, sin paginación'
+  })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Término de búsqueda (coincidencias parciales case-insensitive)', example: 'Juan' })
+  @ApiQuery({ name: 'field', required: false, enum: ['real_name', 'alter_name', 'mobile_number', 'cuit'], description: 'Campo específico para buscar' })
+  @ApiQuery({ name: 'type', required: false, enum: ['autónomo', 'credencial', 'monotributo'], description: 'Tipo de usuario a filtrar' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Lista de usuarios VEP filtrados obtenida exitosamente',
+    type: [CreateVepUserDto]
+  })
+  @ApiResponse({ status: 400, description: 'Solicitud incorrecta' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 500, description: 'Error interno del servidor' })
+  async findFiltered(
+    @Query('search') search?: string,
+    @Query('field') field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
+    @Query('type') type?: 'autónomo' | 'credencial' | 'monotributo',
+  ) {
+    this.logger.log(`Fetching filtered VEP users - search: ${search || 'none'}, field: ${field || 'all'}, type: ${type || 'all'}`);
+    return await this.supabaseService.getVepUsersFiltered(search, field, type);
+  }
+
+  /**
    * Busca usuarios VEP por criterios
    * @param term Término de búsqueda
    * @param field Campo específico para buscar (opcional)

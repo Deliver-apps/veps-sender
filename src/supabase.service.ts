@@ -398,6 +398,62 @@ export class SupabaseService {
   }
 
   /**
+   * Obtiene usuarios VEP con filtros opcionales (sin paginación)
+   * @param searchTerm Término de búsqueda opcional (coincidencias parciales case-insensitive)
+   * @param field Campo específico para buscar (opcional)
+   * @param type Tipo de usuario a filtrar (opcional): 'autónomo' o 'credencial' o 'monotributo'
+   * @returns Lista completa de usuarios filtrados
+   */
+  async getVepUsersFiltered(
+    searchTerm?: string,
+    field?: 'real_name' | 'alter_name' | 'mobile_number' | 'cuit',
+    type?: 'autónomo' | 'credencial' | 'monotributo'
+  ): Promise<Database['public']['Tables']['vep_users']['Row'][]> {
+    this.logger.log(
+      `Fetching filtered VEP users - search: ${searchTerm || 'none'}, field: ${field || 'all'}, type: ${type || 'all'}`
+    );
+
+    /**
+     * 🔧 Helper para construir la query con todos los filtros aplicados
+     */
+    const buildBaseQuery = () => {
+      let query = this.supabase.from('vep_users').select('*');
+
+      if (searchTerm) {
+        const normalizedSearchTerm = searchTerm.toLowerCase();
+
+        if (field) {
+          query = query.ilike(field, `%${normalizedSearchTerm}%`);
+        } else {
+          query = query.or(
+            `real_name.ilike.%${normalizedSearchTerm}%,` +
+            `alter_name.ilike.%${normalizedSearchTerm}%,` +
+            `mobile_number.ilike.%${normalizedSearchTerm}%,` +
+            `cuit.ilike.%${normalizedSearchTerm}%`
+          );
+        }
+      }
+
+      if (type && (type === 'autónomo' || type === 'credencial' || type === 'monotributo')) {
+        query = query.eq('type', type);
+      }
+
+      return query;
+    };
+
+    const { data, error } = await buildBaseQuery()
+      .select('*')
+      .order('real_name');
+
+    if (error) {
+      this.logger.error('Error fetching filtered VEP users:', error);
+      throw new BadRequestException(error.toString());
+    }
+
+    return data || [];
+  }
+
+  /**
    * Agrega un usuario asociado a un usuario VEP existente
    * @param userId ID del usuario principal
    * @param joinedUser Usuario a agregar

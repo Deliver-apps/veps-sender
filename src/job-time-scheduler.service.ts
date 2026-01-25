@@ -343,10 +343,10 @@ export class JobTimeSchedulerService implements OnModuleInit {
         message = `Hola ${user.alter_name}, buenos días, cómo estás? Te paso el vep de autónomo vence ${job.caducate ?? nextMonth}.\n`;
         break;
       case 'credencial':
-        message = `Hola ${user.alter_name}, buenos días, cómo estás? Te paso la credencial del monotributo de ${nextMonth} ${currentYear}, vence el ${job.caducate ?? nextMonth}.\n`;
+        message = `Hola ${user.alter_name}, buenos días, cómo estás? Te paso la credencial del monotributo de ${nextMonth} ${currentYear}, vence el ${job.caducate ?? nextMonth}. El mismo ya cuenta con la recategorizacion.\n`;
         break;
       case 'monotributo':
-        message = `Hola ${user.alter_name}, buenos días, cómo estás? Te paso el vep del monotributo del mes de ${nextMonth} ${currentYear}, vence el ${job.caducate ?? nextMonth}.\n`;
+        message = `Hola ${user.alter_name}, buenos días, cómo estás? Te paso el vep del monotributo del mes de ${nextMonth} ${currentYear}, vence el ${job.caducate ?? nextMonth}. el mismo ya tiene la recategorizacion realizada.\n`;
         break;
       default:
         throw new Error('Tipo de job no válido');

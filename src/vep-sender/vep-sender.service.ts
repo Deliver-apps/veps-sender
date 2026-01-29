@@ -87,32 +87,40 @@ export class VepSenderService {
       }
 
       if (archives.length > 0) {
-        if(archives.length === 1) {
-          await this.whatsappService.sendMessageVep(
-            user.mobile_number,
-            final_message,
-            `VEP-${user.real_name}[${user.cuit}]`,
-            archives[0],
-            'document',
-            user.is_group,
-          );
-        } else {
-          await this.whatsappService.sendMultipleDocuments(
-            user.mobile_number,
-            final_message,
-            archives.map((archive, index) => ({
-              archive,
-              fileName: "a",//index === 0 ? `VEP-${user.real_name}[${user.cuit}]` : `VEP-${user.joined_with} [${user.joined_cuit}]`,
-              mimetype: 'application/pdf',
-            })),
-            user.is_group,
-          );
-        }
+        try {
+          if(archives.length === 1) {
+            await this.whatsappService.sendMessageVep(
+              user.mobile_number,
+              final_message,
+              `VEP-${user.real_name}[${user.cuit}]`,
+              archives[0],
+              'document',
+              user.is_group,
+            );
+          } else {
+            await this.whatsappService.sendMultipleDocuments(
+              user.mobile_number,
+              final_message,
+              archives.map((archive, index) => ({
+                archive,
+                fileName: "a",//index === 0 ? `VEP-${user.real_name}[${user.cuit}]` : `VEP-${user.joined_with} [${user.joined_cuit}]`,
+                mimetype: 'application/pdf',
+              })),
+              user.is_group,
+            );
+          }
 
-        await this.supabaseService.updateVepUserLastExecution(
-          user.id,
-          new Date().toISOString(),
-        );
+          // Actualizar inmediatamente después de enviar el mensaje
+          await this.supabaseService.updateVepUserLastExecution(
+            user.id,
+            new Date().toISOString(),
+          );
+          this.logger.log(`✅ Mensaje enviado y actualizado para usuario ${user.real_name} (ID: ${user.id})`);
+        } catch (error) {
+          this.logger.error(`❌ Error enviando mensaje a usuario ${user.real_name} (ID: ${user.id}):`, error);
+          // No actualizar last_execution si falló el envío
+          continue;
+        }
       }
     }
     this.logger.log(

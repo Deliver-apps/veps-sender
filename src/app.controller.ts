@@ -610,6 +610,122 @@ export class AppController {
     }
   }
 
+  @Post('whatsapp-clear-session')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Limpiar sesión problemática y eliminar desincronización',
+    description: 'Limpia los archivos de sesión que causan desincronización, manteniendo creds.json para reconexión rápida'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Sesión limpiada exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Error al limpiar sesión',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        error: { type: 'string' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  async clearProblematicSession(): Promise<any> {
+    try {
+      console.log('🧹 Limpiando sesión problemática...');
+      
+      await this.whatsappService.clearProblematicSessions();
+      
+      const response = {
+        success: true,
+        message: 'Sesiones problemáticas limpiadas. La próxima conexión regenerará sesiones limpias.',
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('✅ Sesión limpiada:', response);
+      return response;
+      
+    } catch (error) {
+      console.error('❌ Error limpiando sesión:', error);
+      throw new HttpException(
+        {
+          success: false,
+          error: error.message || 'Error al limpiar sesión',
+          timestamp: new Date().toISOString()
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('whatsapp-clear-and-reconnect')
+  @ApiTags('WhatsApp Test')
+  @ApiOperation({
+    summary: 'Limpiar sesión completa y reconectar',
+    description: 'Elimina toda la sesión y fuerza una nueva autenticación. Requiere escanear QR nuevamente.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Sesión limpiada y reconexión iniciada',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Error al limpiar y reconectar',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        error: { type: 'string' },
+        timestamp: { type: 'string' }
+      }
+    }
+  })
+  async clearSessionAndReconnect(): Promise<any> {
+    try {
+      console.log('🧹 Limpiando sesión completa y reconectando...');
+      
+      await this.whatsappService.clearSessionAndReconnect();
+      
+      const response = {
+        success: true,
+        message: 'Sesión limpiada completamente. Usa /qr-code para obtener el nuevo QR y escanearlo.',
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('✅ Sesión limpiada y reconexión iniciada:', response);
+      return response;
+      
+    } catch (error) {
+      console.error('❌ Error limpiando y reconectando:', error);
+      throw new HttpException(
+        {
+          success: false,
+          error: error.message || 'Error al limpiar y reconectar',
+          timestamp: new Date().toISOString()
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Post('whatsapp-reinit')
   @ApiTags('WhatsApp Test')
   @ApiOperation({
@@ -1021,6 +1137,18 @@ export class AppController {
           // Enviar mensaje de texto simple
           await this.whatsappService.sendSimpleTextMessage(jid, message);
           
+          // Actualizar last_execution inmediatamente después de enviar el mensaje
+          try {
+            await this.supabaseService.updateVepUserLastExecution(
+              user.id,
+              new Date().toISOString(),
+            );
+            this.logger.log(`✅ Mensaje enviado y last_execution actualizado para usuario ${user.real_name} (ID: ${user.id})`);
+          } catch (updateError) {
+            this.logger.error(`⚠️ Error actualizando last_execution para usuario ${user.id}:`, updateError.message);
+            // No fallar el proceso si falla la actualización, solo loguearlo
+          }
+          
           results.successful++;
           
           // Pequeña pausa entre mensajes para evitar spam
@@ -1034,6 +1162,7 @@ export class AppController {
             userName: user.real_name,
             error: error.message,
           });
+          // No actualizar last_execution si falló el envío
         }
       }
 
@@ -1168,6 +1297,18 @@ export class AppController {
             'image',
             user.is_group,
           );
+
+          // Actualizar last_execution inmediatamente después de enviar la imagen
+          try {
+            await this.supabaseService.updateVepUserLastExecution(
+              user.id,
+              new Date().toISOString(),
+            );
+            this.logger.log(`✅ Imagen enviada y last_execution actualizado para usuario ${user.real_name} (ID: ${user.id})`);
+          } catch (updateError) {
+            this.logger.error(`⚠️ Error actualizando last_execution para usuario ${user.id}:`, updateError.message);
+            // No fallar el proceso si falla la actualización, solo loguearlo
+          }
           
           results.successful++;
           
@@ -1182,6 +1323,7 @@ export class AppController {
             userName: user.real_name,
             error: error.message,
           });
+          // No actualizar last_execution si falló el envío
         }
       }
 

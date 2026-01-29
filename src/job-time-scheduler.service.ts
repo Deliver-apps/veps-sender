@@ -215,6 +215,20 @@ export class JobTimeSchedulerService implements OnModuleInit {
           result
         });
         
+        // Actualizar estado "sent" del usuario en el job inmediatamente después de enviar
+        try {
+          await this.supabaseService.updateJobTimeUsers(job.id, [{
+            userId: user.id,
+            updates: {
+              sent: true
+            }
+          }]);
+          this.logger.log(`✅ Estado "sent" actualizado para usuario ${user.real_name} (ID: ${user.id}) en job ${job.id}`);
+        } catch (updateError) {
+          this.logger.error(`⚠️ Error actualizando estado "sent" para usuario ${user.id} en job ${job.id}:`, updateError.message);
+          // No fallar el proceso si falla la actualización, solo loguearlo
+        }
+        
         // Pequeña pausa entre mensajes para evitar spam
         await this.delay(1500);
         
@@ -226,23 +240,19 @@ export class JobTimeSchedulerService implements OnModuleInit {
           success: false,
           error: error.message
         });
-      }
-    }
-
-    // Actualizar usuarios basado en los resultados
-    if (results.length > 0) {
-      try {
-        const userUpdates = results.map(result => ({
-          userId: result.userId,
-          updates: {
-            sent: result.success
-          }
-        }));
-
-        await this.supabaseService.updateJobTimeUsers(job.id, userUpdates);
-        this.logger.log(`✅ Actualizado estado de ${userUpdates.length} usuarios en job ${job.id}`);
-      } catch (error) {
-        this.logger.error(`❌ Error actualizando usuarios en job ${job.id}:`, error.message);
+        
+        // Actualizar estado "sent" como false si falló el envío
+        try {
+          await this.supabaseService.updateJobTimeUsers(job.id, [{
+            userId: user.id,
+            updates: {
+              sent: false
+            }
+          }]);
+          this.logger.log(`⚠️ Estado "sent" actualizado a false para usuario ${user.real_name} (ID: ${user.id}) en job ${job.id}`);
+        } catch (updateError) {
+          this.logger.error(`⚠️ Error actualizando estado "sent" para usuario ${user.id} en job ${job.id}:`, updateError.message);
+        }
       }
     }
 
@@ -298,8 +308,9 @@ export class JobTimeSchedulerService implements OnModuleInit {
       const vepFileName = `${user.real_name} [${user.cuit}].pdf`;
 
       // Enviar mensaje con archivos encontrados
+      let sendResult;
       if (archives.length === 1) {
-        return await this.whatsappService.sendMessageVep(
+        sendResult = await this.whatsappService.sendMessageVep(
           user.mobile_number,
           message,
           vepFileName,
@@ -310,7 +321,7 @@ export class JobTimeSchedulerService implements OnModuleInit {
       } else {
         console.log(JSON.stringify(user, null, 2),"usuarios asociados", user.joined_users);
         // Enviar múltiples archivos
-        return await this.whatsappService.sendMultipleDocuments(
+        sendResult = await this.whatsappService.sendMultipleDocuments(
           user.mobile_number,
           message,
           archives.map((archive, index) => ({
@@ -321,6 +332,20 @@ export class JobTimeSchedulerService implements OnModuleInit {
           user.is_group
         );
       }
+
+      // Actualizar last_execution inmediatamente después de enviar el mensaje
+      try {
+        await this.supabaseService.updateVepUserLastExecution(
+          user.id,
+          new Date().toISOString(),
+        );
+        this.logger.log(`✅ Mensaje enviado y last_execution actualizado para usuario ${user.real_name} (ID: ${user.id})`);
+      } catch (updateError) {
+        this.logger.error(`⚠️ Error actualizando last_execution para usuario ${user.id}:`, updateError.message);
+        // No lanzar error, solo loguearlo, ya que el mensaje se envió correctamente
+      }
+
+      return sendResult;
     } catch (error) {
       this.logger.error(`❌ Error obteniendo archivos para usuario ${user.real_name}:`, error.message);
       throw error;

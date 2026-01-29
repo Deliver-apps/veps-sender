@@ -1,5 +1,5 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import makeWASocket from '@whiskeysockets/baileys';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import makeWASocket, { fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import { DisconnectReason, GroupMetadata } from '@whiskeysockets/baileys/lib/Types';
 import { useMultiFileAuthState } from '@whiskeysockets/baileys/lib/Utils/use-multi-file-auth-state';
 import { Boom } from '@hapi/boom';
@@ -12,6 +12,7 @@ import { nowBA } from './time.helper';
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
+  private readonly logger = new Logger(WhatsappService.name);
   private socket: ReturnType<typeof makeWASocket>;
   private sessionData: any;
   private SESSION_DIR: string = './session';
@@ -113,24 +114,75 @@ export class WhatsappService implements OnModuleInit {
       }
     }
 
+    // Obtener versión más reciente de Baileys dinámicamente
+    const { version } = await fetchLatestBaileysVersion();
+    this.logger.log(`Using Baileys version ${version.join('.')}`);
+
     const { state, saveCreds } = await useMultiFileAuthState(this.SESSION_DIR);
 
+    // Logger personalizado para filtrar logs innecesarios de Baileys
+    const customLogger = {
+      level: 'silent' as const, // Nivel más bajo para reducir logs
+      trace: () => {}, // Ignorar traces
+      debug: () => {}, // Ignorar debug
+      info: (message: string, ...args: any[]) => {
+        // Solo loguear información importante
+        const importantMessages = [
+          'connection',
+          'qr',
+          'creds',
+          'error',
+          'close',
+          'open'
+        ];
+        if (importantMessages.some(keyword => message?.toLowerCase().includes(keyword))) {
+          this.logger.log(`[Baileys] ${message}`, ...args);
+        }
+      },
+      warn: (message: string, ...args: any[]) => {
+        // Solo loguear warnings importantes (no errores de sesión normales)
+        if (!message?.includes('Session error') && 
+            !message?.includes('Over 2000 messages') &&
+            !message?.includes('No matching sessions')) {
+          this.logger.warn(`[Baileys] ${message}`, ...args);
+        }
+      },
+      error: (message: string, ...args: any[]) => {
+        // Solo loguear errores críticos (no errores de sesión normales)
+        if (!message?.includes('Session error') && 
+            !message?.includes('Over 2000 messages') &&
+            !message?.includes('No matching sessions') &&
+            !message?.includes('failed to decrypt') &&
+            !message?.includes('transaction failed')) {
+          this.logger.error(`[Baileys] ${message}`, ...args);
+        }
+      },
+      fatal: (message: string, ...args: any[]) => {
+        // Solo loguear errores fatales
+        this.logger.error(`[Baileys FATAL] ${message}`, ...args);
+      },
+      child: () => customLogger, // Retornar el mismo logger para children
+    };
+
     this.socket = makeWASocket({
+      version, // Versión más reciente obtenida dinámicamente
       auth: state,
-      printQRInTerminal: false,
+      printQRInTerminal: false, // QR se muestra en web, no en terminal
+      markOnlineOnConnect: false, // No marca como "online" al conectar
+      syncFullHistory: false, // No sincroniza historial completo
+      shouldSyncHistoryMessage: () => false, // Rechaza sincronizar mensajes antiguos
+      browser: ['Estudio Contable', 'Desktop', '1.0.0'], // Identificador del bot
+      logger: customLogger, // Logger personalizado para filtrar logs innecesarios
       // Configuraciones mejoradas para evitar timeouts y errores de conexión
       connectTimeoutMs: 60000, // 60 segundos para conexión inicial
       defaultQueryTimeoutMs: 60000, // 60 segundos para queries
       keepAliveIntervalMs: 30000, // Keep alive cada 30 segundos
       retryRequestDelayMs: 2000, // 2 segundos entre reintentos
       qrTimeout: 60000, // 60 segundos de timeout para QR
-      markOnlineOnConnect: false, // No marcar online automáticamente
-      browser: ['VEP Sender', 'Chrome', '120.0.0'], // Identificador del browser
       // Configuraciones adicionales para estabilidad
       generateHighQualityLinkPreview: false,
-      syncFullHistory: false,
       // Configuraciones para reducir timeouts internos
-      getMessage: async (key) => {
+      getMessage: async () => {
         // Devolver undefined para evitar queries innecesarias
         return undefined;
       },
@@ -247,22 +299,102 @@ export class WhatsappService implements OnModuleInit {
           console.log('💡 Si el problema persiste, verifica que no haya conflictos con otras sesiones');
         }
       } else if (connection === 'open') {
-        console.log('WhatsApp connection established!');
+        this.logger.log('WhatsApp connection established!');
         this.qrAttempts = 0; // Reset contador al conectar exitosamente
         this.downloadAttempts = 0; // Reset contador de descarga al conectar exitosamente
         this.reconnectionAttempts = 0; // Reset contador de reconexión al conectar exitosamente
+        
+        // Marcar como "unavailable" para no aparecer como "en línea"
+        // Esto evita que los mensajes no suenen en el celular
+        if (this.socket) {
+          try {
+            await this.socket.sendPresenceUpdate('unavailable');
+            this.logger.log('Marked as unavailable to prevent "online" status');
+          } catch (error) {
+            const err = error as Error;
+            this.logger.warn(`Could not set presence to unavailable: ${err.message}`);
+          }
+        }
+        
+        this.logger.log('Bot is ready to receive and send messages');
+        
         // Backup session when successfully connected
-        console.log('Backing up session to cloud...', this.configService.get<string>('server.node_env'));
-        if(this.configService.get<string>('server.node_env') === 'production') {
+        if (this.configService.get<string>('server.node_env') === 'production') {
           this.autoBackupToCloud().catch(console.error);
         } else {
-          console.log('Auto-backup skipped in development mode');
+          this.logger.debug('Auto-backup skipped in development mode');
         }
       }
     });
 
+    // Configurar manejador global para errores de sesión (una sola vez)
+    if (!process.listeners('unhandledRejection').some((listener: any) => 
+      listener.toString().includes('Session error')
+    )) {
+      process.on('unhandledRejection', (reason, promise) => {
+        if (reason && typeof reason === 'object' && 'message' in reason) {
+          const errorMessage = String((reason as any).message || '');
+          const errorName = String((reason as any).name || '');
+          
+          // Ignorar errores de sesión conocidos (son normales del protocolo Signal)
+          const sessionErrors = [
+            'Over 2000 messages into the future',
+            'SessionError',
+            'No matching sessions found',
+            'Invalid PreKey ID',
+            'failed to decrypt message',
+            'transaction failed'
+          ];
+          
+          const isSessionError = sessionErrors.some(err => 
+            errorMessage.includes(err) || errorName.includes(err)
+          );
+          
+          if (isSessionError) {
+            // No loguear estos errores, son normales del protocolo Signal
+            return;
+          }
+        }
+        
+        // Para otros errores, dejarlos pasar (se loguearán normalmente)
+      });
+    }
+
     this.socket.ev.on('messages.upsert', async (m) => {
-      console.log('Mensaje recibido:', JSON.stringify(m, undefined, 2));
+      // Filtrar mensajes con errores de sesión conocidos
+      if (m.messages && Array.isArray(m.messages)) {
+        const validMessages = m.messages.filter(msg => {
+          // Ignorar mensajes stub con errores de sesión
+          if (msg.messageStubType === 2) {
+            const stubParams = msg.messageStubParameters || [];
+            const errorMessages = [
+              'No matching sessions found for message',
+              'Invalid PreKey ID',
+              'Over 2000 messages into the future',
+              'Session error'
+            ];
+            
+            const hasSessionError = stubParams.some((param: any) => 
+              errorMessages.some(err => String(param).toLowerCase().includes(err.toLowerCase()))
+            );
+            
+            if (hasSessionError) {
+              // Estos son errores normales del protocolo Signal, no loguearlos
+              return false;
+            }
+          }
+          return true;
+        });
+        
+        // Solo loguear si hay mensajes válidos (no errores de sesión)
+        if (validMessages.length > 0) {
+          console.log('Mensaje recibido:', JSON.stringify({ ...m, messages: validMessages }, undefined, 2));
+        }
+        // Si todos los mensajes fueron filtrados (errores de sesión), no loguear nada
+      } else {
+        // Si no hay array de mensajes, loguear normalmente
+        console.log('Mensaje recibido:', JSON.stringify(m, undefined, 2));
+      }
     });
     
       // Marcar inicialización como completada
@@ -490,6 +622,84 @@ export class WhatsappService implements OnModuleInit {
       console.log(`Session ${this.SESSION_DIR} deleted successfully`);
     } catch (error) {
       console.error('Error deleting session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Limpia sesiones problemáticas que causan desincronización
+   * Elimina archivos de sesión específicos pero mantiene creds.json
+   */
+  async clearProblematicSessions(): Promise<void> {
+    try {
+      console.log('🧹 Limpiando sesiones problemáticas para eliminar desincronización...');
+      
+      const sessionDirPath = this.SESSION_DIR;
+      
+      try {
+        await fs.access(sessionDirPath);
+        const files = await fs.readdir(sessionDirPath);
+        
+        // Eliminar solo archivos de sesión (session-*), mantener creds.json
+        for (const file of files) {
+          if (file.startsWith('session-') || file.startsWith('pre-key-') || file.startsWith('sender-key-') || file.startsWith('app-state-sync-key-')) {
+            const filePath = path.join(sessionDirPath, file);
+            try {
+              await fs.unlink(filePath);
+              console.log(`✅ Eliminado archivo de sesión problemático: ${file}`);
+            } catch (error) {
+              console.warn(`⚠️ No se pudo eliminar ${file}:`, error.message);
+            }
+          }
+        }
+        
+        console.log('✅ Sesiones problemáticas limpiadas. Se mantiene creds.json para reconexión rápida.');
+        console.log('💡 La próxima vez que se conecte, se regenerarán las sesiones limpias.');
+      } catch (error) {
+        console.log('⚠️ No se encontró directorio de sesión, no hay nada que limpiar');
+      }
+    } catch (error) {
+      console.error('❌ Error limpiando sesiones problemáticas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Limpia completamente la sesión y fuerza nueva autenticación
+   */
+  async clearSessionAndReconnect(): Promise<void> {
+    try {
+      console.log('🧹 Limpiando sesión completa y forzando reconexión...');
+      
+      // Cerrar socket actual si existe
+      if (this.socket) {
+        try {
+          await this.socket.logout();
+        } catch (error) {
+          console.warn('⚠️ Error al cerrar socket:', error.message);
+        }
+      }
+      
+      // Eliminar toda la sesión
+      await this.deleteSession();
+      
+      // Recrear directorio
+      await fs.mkdir(this.SESSION_DIR, { recursive: true });
+      
+      // Resetear contadores
+      this.qrAttempts = 0;
+      this.reconnectionAttempts = 0;
+      this.downloadAttempts = 0;
+      this.isInitializing = false;
+      
+      console.log('✅ Sesión limpiada completamente. Reiniciando conexión...');
+      
+      // Reinicializar
+      await this.onModuleInit();
+      
+      console.log('✅ Reconexión iniciada. Usa /qr-code para obtener el nuevo QR.');
+    } catch (error) {
+      console.error('❌ Error en clearSessionAndReconnect:', error);
       throw error;
     }
   }

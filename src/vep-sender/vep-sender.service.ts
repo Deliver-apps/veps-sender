@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import moment from 'moment-timezone';
 import { DigitalOceanService } from 'src/digitalOcean.service';
 import { SupabaseService } from 'src/supabase.service';
 import { formatBA, getMonthNameBA, nowBA } from 'src/time.helper';
@@ -15,9 +14,7 @@ export class VepSenderService {
     private whatsappService: WhatsappService,
   ) {}
 
-  async sendAllVeps(
-
-  ): Promise<{ message: string; timestamp: string }> {
+  async sendAllVeps(): Promise<{ message: string; timestamp: string }> {
     this.logger.verbose('Starting to send VEP messages to all users...');
     const users = await this.supabaseService.getVepUsers();
     this.logger.verbose('Fetched users:', users);
@@ -26,16 +23,14 @@ export class VepSenderService {
     }
     this.logger.verbose(`Found ${users.length} users to send VEP messages to.`);
     const current_month_spanish = getMonthNameBA();
-    const today = nowBA();
     const date_to_pay = nowBA().plus({ months: 1 });
-    const date_to_pay_spanish = getMonthNameBA(date_to_pay);
     const year_to_pay = date_to_pay.year;
     for (const user of users) {
-      const archiveName = `${user.real_name}[${user.cuit}].pdf` ;
+      const archiveName = `${user.real_name}[${user.cuit}].pdf`;
       this.logger.verbose(
         `Fetching archive for user: ${user.real_name}[${user.cuit}]`,
       );
-      let archives: Array<Buffer> = [];
+      const archives: Array<Buffer> = [];
       try {
         const folderName = `veps_${current_month_spanish}_${year_to_pay}`;
         this.logger.verbose(`Fetching archive from folder: ${folderName}`);
@@ -74,21 +69,23 @@ export class VepSenderService {
         : message;
 
       if (user.need_z) {
-        final_message += 'No te olvides cuando puedas de mandarme el cierre Z. Saludos.';
+        final_message +=
+          'No te olvides cuando puedas de mandarme el cierre Z. Saludos.';
       }
 
       if (user.need_compra) {
-        final_message += 'No te olvides cuando puedas de mandarme la factura de compra. Saludos.';
+        final_message +=
+          'No te olvides cuando puedas de mandarme la factura de compra. Saludos.';
       }
-      
 
       if (user.need_auditoria) {
-        final_message += 'No te olvides cuando puedas de mandarme el cierre de auditoria. Saludos.';
+        final_message +=
+          'No te olvides cuando puedas de mandarme el cierre de auditoria. Saludos.';
       }
 
       if (archives.length > 0) {
         try {
-          if(archives.length === 1) {
+          if (archives.length === 1) {
             await this.whatsappService.sendMessageVep(
               user.mobile_number,
               final_message,
@@ -103,7 +100,10 @@ export class VepSenderService {
               final_message,
               archives.map((archive, index) => ({
                 archive,
-                fileName: "a",//index === 0 ? `VEP-${user.real_name}[${user.cuit}]` : `VEP-${user.joined_with} [${user.joined_cuit}]`,
+                fileName:
+                  index === 0
+                    ? `VEP-${user.real_name}[${user.cuit}]`
+                    : `VEP-${user.joined_users[index - 1]?.name || 'Generado'} [${user.joined_users[index - 1]?.cuit || `${new Date().toISOString()}`}]`,
                 mimetype: 'application/pdf',
               })),
               user.is_group,
@@ -115,9 +115,14 @@ export class VepSenderService {
             user.id,
             new Date().toISOString(),
           );
-          this.logger.log(`✅ Mensaje enviado y actualizado para usuario ${user.real_name} (ID: ${user.id})`);
+          this.logger.log(
+            `✅ Mensaje enviado y actualizado para usuario ${user.real_name} (ID: ${user.id})`,
+          );
         } catch (error) {
-          this.logger.error(`❌ Error enviando mensaje a usuario ${user.real_name} (ID: ${user.id}):`, error);
+          this.logger.error(
+            `❌ Error enviando mensaje a usuario ${user.real_name} (ID: ${user.id}):`,
+            error,
+          );
           // No actualizar last_execution si falló el envío
           continue;
         }

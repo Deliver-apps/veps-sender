@@ -14,24 +14,26 @@ async function bootstrap() {
   app.enableCors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     origin: [
-      'https://veps-frontend-production.up.railway.app', 
+      'https://veps-frontend-production.up.railway.app',
       'http://localhost:3001',
       'https://veps-sender-production.up.railway.app', // Para que Swagger UI funcione
-      'http://localhost:3000' // Para desarrollo local
+      'http://localhost:3000', // Para desarrollo local
     ],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true,
   });
 
   // Configurar validación global
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: {
-      enableImplicitConversion: true,
-    },
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
 
   // Configurar filtro de excepciones global
   app.useGlobalFilters(new HttpExceptionFilter());
@@ -39,7 +41,9 @@ async function bootstrap() {
   // Configurar Swagger
   const config = new DocumentBuilder()
     .setTitle('VEP Sender API')
-    .setDescription('API para la gestión de usuarios VEP y job times con integración a Digital Ocean y Supabase')
+    .setDescription(
+      'API para la gestión de usuarios VEP y job times con integración a Digital Ocean y Supabase',
+    )
     .setVersion('1.0.0')
     .addTag('VEP Users', 'Gestión de usuarios VEP')
     .addTag('Job Time', 'Gestión de job times y ejecuciones')
@@ -66,11 +70,14 @@ async function bootstrap() {
       'DigitalOcean-auth',
     )
     .addServer('http://localhost:3000', 'Servidor de desarrollo')
-    .addServer('https://veps-sender-production.up.railway.app', 'Servidor de producción')
+    .addServer(
+      'https://veps-sender-production.up.railway.app',
+      'Servidor de producción',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app as any, config);
-  
+
   // Configurar Swagger UI con autenticación
   const swaggerOptions = {
     swaggerOptions: {
@@ -103,7 +110,7 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  
+
   console.log(`🚀 Aplicación ejecutándose en: http://localhost:${port}`);
   console.log(`📚 Documentación Swagger: http://localhost:${port}/api/docs`);
   console.log(`🏥 Health Check: http://localhost:${port}/health`);

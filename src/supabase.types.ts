@@ -1,5 +1,3 @@
-import { JoinedUserDto } from "./vep-sender/dto/create-vep-user.dto";
-
 export type Json =
   | string
   | number
@@ -195,7 +193,7 @@ export type Database = {
             need_auditoria: boolean | null;
             cuit: string | null;
             type: 'autónomo' | 'credencial' | 'monotributo';
-            sent: boolean
+            sent: boolean;
           }> | null;
           execution_time?: string | null;
           type?: 'autónomo' | 'credencial' | 'monotributo' | null;
@@ -225,7 +223,7 @@ export type Database = {
             need_auditoria: boolean | null;
             cuit: string | null;
             type: 'autónomo' | 'credencial' | 'monotributo';
-            sent: boolean
+            sent: boolean;
           }> | null;
           execution_time?: string | null;
           type?: 'autónomo' | 'credencial' | 'monotributo' | null;
@@ -233,6 +231,29 @@ export type Database = {
           status?: 'PENDING' | 'RUNNING' | 'FINISHED' | 'ERROR';
           caducate?: string;
           executed_at?: string;
+        };
+        Relationships: [];
+      };
+      message_templates: {
+        Row: {
+          id: number;
+          type: 'autónomo' | 'credencial' | 'monotributo';
+          template: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          type: 'autónomo' | 'credencial' | 'monotributo';
+          template: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          type?: 'autónomo' | 'credencial' | 'monotributo';
+          template?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };

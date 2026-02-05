@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 export class SupabaseService {
   private supabase: SupabaseClient<Database>;
   private readonly logger = new Logger(SupabaseService.name);
+  private readonly defaultTimeoutMs: number = 30000; // 30 segundos por defecto
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('supabase.url');
@@ -15,15 +16,67 @@ export class SupabaseService {
     this.supabase = createClient(supabaseUrl, supabaseKey);
   }
 
+  /**
+   * Wrapper para agregar timeout a operaciones de Supabase
+   * Los builders de Supabase son "thenable" y funcionan directamente con Promise.race
+   */
+  private async withTimeout<T>(
+    operation: any, // Acepta builders de Supabase que son "thenable"
+    timeoutMs: number = this.defaultTimeoutMs,
+    operationName: string = 'Database operation',
+  ): Promise<T> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `${operationName} timed out after ${timeoutMs}ms`,
+            ),
+          ),
+        timeoutMs,
+      );
+    });
+
+    try {
+      // Los builders de Supabase son "thenable", funcionan directamente con Promise.race
+      return await Promise.race([operation, timeoutPromise]);
+    } catch (error) {
+      const err = error as Error;
+      if (err.message.includes('timed out')) {
+        this.logger.error(
+          `⏱️ ${operationName} timed out after ${timeoutMs}ms`,
+        );
+        throw new Error(
+          `Database operation timeout: ${operationName} exceeded ${timeoutMs}ms`,
+        );
+      }
+      throw error;
+    }
+  }
+
   async getVepUsers(): Promise<
     Database['public']['Tables']['vep_users']['Row'][]
   > {
-    const { data, error } = await this.supabase.from('vep_users').select('*');
-    if (error) {
-      this.logger.error(error);
-      throw new BadRequestException(error.toString());
+    try {
+      const operationPromise = this.supabase.from('vep_users').select('*');
+      const { data, error } = await this.withTimeout(
+        operationPromise,
+        this.defaultTimeoutMs,
+        'getVepUsers',
+      ) as { data: any; error: any };
+      if (error) {
+        this.logger.error(error);
+        throw new BadRequestException(error.toString());
+      }
+      return data;
+    } catch (error) {
+      const err = error as Error;
+      if (err.message.includes('timeout')) {
+        this.logger.error('Timeout obteniendo usuarios VEP');
+        throw new BadRequestException('Timeout obteniendo usuarios VEP');
+      }
+      throw error;
     }
-    return data;
   }
 
   async updateVepUserLastExecution(
@@ -819,18 +872,35 @@ export class SupabaseService {
   async getJobTimesByStatus(status: 'PENDING' | 'RUNNING' | 'FINISHED' | 'ERROR'): Promise<Database['public']['Tables']['job_time']['Row'][]> {
     this.logger.log(`Fetching job_times with status: ${status}`);
     
-    const { data, error } = await this.supabase
-      .from('job_time')
-      .select('*')
-      .eq('status', status)
-      .order('created_at', { ascending: false });
+    try {
+      const operationPromise = this.supabase
+        .from('job_time')
+        .select('*')
+        .eq('status', status)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      this.logger.error('Error fetching job_times by status:', error);
-      throw new BadRequestException(error.toString());
+      const { data, error } = await this.withTimeout(
+        operationPromise,
+        this.defaultTimeoutMs,
+        `getJobTimesByStatus(${status})`,
+      ) as { data: any; error: any };
+
+      if (error) {
+        this.logger.error('Error fetching job_times by status:', error);
+        throw new BadRequestException(error.toString());
+      }
+
+      return data || [];
+    } catch (error) {
+      const err = error as Error;
+      if (err.message.includes('timeout')) {
+        this.logger.error(`Timeout obteniendo jobs con status ${status}`);
+        throw new BadRequestException(
+          `Timeout obteniendo jobs con status ${status}`,
+        );
+      }
+      throw error;
     }
-
-    return data || [];
   }
 
   /**
@@ -879,6 +949,49 @@ export class SupabaseService {
       throw new BadRequestException(error.toString());
     }
 
+    return data;
+  }
+
+  /**
+   * Actualiza el estado de un job a RUNNING solo si está en PENDING (operación atómica)
+   * Retorna null si el job no está en PENDING (ya está ejecutándose o terminado)
+   */
+  async updateJobTimeToRunningIfPending(
+    id: number,
+  ): Promise<Database['public']['Tables']['job_time']['Row'] | null> {
+    this.logger.log(
+      `Attempting to atomically update job_time ${id} to RUNNING if PENDING`,
+    );
+
+    // Usar una actualización condicional: solo actualizar si status = 'PENDING'
+    const { data, error } = await this.supabase
+      .from('job_time')
+      .update({ status: 'RUNNING' })
+      .eq('id', id)
+      .eq('status', 'PENDING') // Solo actualizar si está en PENDING
+      .select()
+      .single();
+
+    if (error) {
+      // Si no hay filas afectadas, significa que el job no está en PENDING
+      if (error.code === 'PGRST116') {
+        this.logger.warn(
+          `Job ${id} is not in PENDING status, skipping execution`,
+        );
+        return null;
+      }
+      this.logger.error('Error updating job_time status atomically:', error);
+      throw new BadRequestException(error.toString());
+    }
+
+    if (!data) {
+      this.logger.warn(
+        `Job ${id} could not be updated to RUNNING (may already be running or finished)`,
+      );
+      return null;
+    }
+
+    this.logger.log(`Job_time ${id} atomically updated to RUNNING`);
     return data;
   }
 
@@ -1061,6 +1174,26 @@ export class SupabaseService {
     }
 
     this.logger.log(`Successfully updated ${userUpdates.length} users in job ${jobId}`);
+    return data;
+  }
+
+  /**
+   * Obtiene el template de mensaje para un tipo específico
+   */
+  async getMessageTemplate(
+    type: 'autónomo' | 'credencial' | 'monotributo',
+  ): Promise<Database['public']['Tables']['message_templates']['Row'] | null> {
+    const { data, error } = await this.supabase
+      .from('message_templates')
+      .select('*')
+      .eq('type', type)
+      .single();
+
+    if (error) {
+      this.logger.warn(`Template no encontrado para tipo ${type}: ${error.message}`);
+      return null;
+    }
+
     return data;
   }
 }

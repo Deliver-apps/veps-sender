@@ -1109,6 +1109,14 @@ export class AppController {
         return res.status(400).json({ error: 'El mensaje es requerido' });
       }
 
+      // Validar conexión de WhatsApp antes de continuar
+      if (!this.whatsappService.isConnected()) {
+        return res.status(503).json({ 
+          error: 'WhatsApp no está conectado. Por favor, espera a que se establezca la conexión.',
+          connected: false
+        });
+      }
+
       // Obtener todos los usuarios de la base de datos
       const users = await this.supabaseService.getVepUsers();
       
@@ -1234,6 +1242,14 @@ export class AppController {
   ): Promise<Response> {
     try {
       const { caption = '' } = body;
+      
+      // Validar conexión de WhatsApp antes de continuar
+      if (!this.whatsappService.isConnected()) {
+        return res.status(503).json({ 
+          error: 'WhatsApp no está conectado. Por favor, espera a que se establezca la conexión.',
+          connected: false
+        });
+      }
       
       // Construir la ruta de la imagen en la raíz del proyecto
       const imagePath = path.join(process.cwd(), imageName);

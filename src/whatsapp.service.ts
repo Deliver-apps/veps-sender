@@ -1,6 +1,11 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import makeWASocket, { fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
-import { DisconnectReason, GroupMetadata } from '@whiskeysockets/baileys/lib/Types';
+import makeWASocket, {
+  fetchLatestBaileysVersion,
+} from '@whiskeysockets/baileys';
+import {
+  DisconnectReason,
+  GroupMetadata,
+} from '@whiskeysockets/baileys/lib/Types';
 import { useMultiFileAuthState } from '@whiskeysockets/baileys/lib/Utils/use-multi-file-auth-state';
 import { Boom } from '@hapi/boom';
 import { AppService } from './app.service';
@@ -41,7 +46,7 @@ export class WhatsappService implements OnModuleInit {
     private appService: AppService,
     private digitalOceanService: DigitalOceanService,
     private configService: ConfigService,
-  ) { }
+  ) {}
 
   async onModuleInit() {
     // Evitar múltiples inicializaciones concurrentes usando promesa
@@ -66,7 +71,9 @@ export class WhatsappService implements OnModuleInit {
   private async initializeConnection() {
     // Evitar múltiples inicializaciones concurrentes
     if (this.isInitializing) {
-      this.logger.warn('⚠️ Ya hay una inicialización en progreso, omitiendo...');
+      this.logger.warn(
+        '⚠️ Ya hay una inicialización en progreso, omitiendo...',
+      );
       return;
     }
 
@@ -75,7 +82,9 @@ export class WhatsappService implements OnModuleInit {
     try {
       // Cerrar socket existente si hay uno para evitar conflictos (error 440)
       if (this.socket) {
-        this.logger.log('🔄 Cerrando conexión existente antes de reinicializar...');
+        this.logger.log(
+          '🔄 Cerrando conexión existente antes de reinicializar...',
+        );
         try {
           this.socket.end(undefined);
         } catch (e) {
@@ -87,8 +96,9 @@ export class WhatsappService implements OnModuleInit {
       this.logger.log('🚀 Inicializando WhatsApp Service...');
       this.logger.debug('🔧 Environment:', {
         nodeEnv: process.env.NODE_ENV,
-        isProduction: this.configService.get<string>('server.node_env') === 'production',
-        sessionDir: this.SESSION_DIR
+        isProduction:
+          this.configService.get<string>('server.node_env') === 'production',
+        sessionDir: this.SESSION_DIR,
       });
 
       // Verificar si ya existe una sesión local válida
@@ -99,10 +109,14 @@ export class WhatsappService implements OnModuleInit {
 
         // Verificar que existan archivos de sesión válidos
         const hasCredsFile = files.includes('creds.json');
-        const hasSessionFiles = files.some(file => file.startsWith('session-'));
+        const hasSessionFiles = files.some((file) =>
+          file.startsWith('session-'),
+        );
 
         if (hasCredsFile && hasSessionFiles) {
-          console.log('✅ Sesión local válida encontrada, no se descargará de la nube');
+          console.log(
+            '✅ Sesión local válida encontrada, no se descargará de la nube',
+          );
           hasValidLocalSession = true;
 
           // Verificar que creds.json no esté vacío o corrupto
@@ -122,16 +136,26 @@ export class WhatsappService implements OnModuleInit {
             hasValidLocalSession = false;
           }
         } else {
-          console.log('❌ Sesión local incompleta - creds.json:', hasCredsFile, 'session files:', hasSessionFiles);
+          console.log(
+            '❌ Sesión local incompleta - creds.json:',
+            hasCredsFile,
+            'session files:',
+            hasSessionFiles,
+          );
         }
       } catch (error) {
         console.log('❌ No se encontró directorio de sesión local');
       }
 
       // Solo descargar si no hay sesión local válida y no hemos excedido los intentos
-      if (!hasValidLocalSession && this.downloadAttempts < this.maxDownloadAttempts) {
+      if (
+        !hasValidLocalSession &&
+        this.downloadAttempts < this.maxDownloadAttempts
+      ) {
         try {
-          console.log(`📥 Intentando descargar sesión de la nube... (intento ${this.downloadAttempts + 1}/${this.maxDownloadAttempts})`);
+          console.log(
+            `📥 Intentando descargar sesión de la nube... (intento ${this.downloadAttempts + 1}/${this.maxDownloadAttempts})`,
+          );
           this.downloadAttempts++;
           const downloadSuccess = await this.downloadLatestSession();
           if (downloadSuccess) {
@@ -139,22 +163,32 @@ export class WhatsappService implements OnModuleInit {
             this.downloadAttempts = 0; // Reset contador al éxito
             hasValidLocalSession = true; // Marcar que ahora tenemos sesión válida
           } else {
-            console.log(`❌ No se encontró sesión en la nube o falló la descarga (intento ${this.downloadAttempts}/${this.maxDownloadAttempts}), iniciando sesión nueva`);
+            console.log(
+              `❌ No se encontró sesión en la nube o falló la descarga (intento ${this.downloadAttempts}/${this.maxDownloadAttempts}), iniciando sesión nueva`,
+            );
           }
         } catch (error) {
-          console.log(`❌ Error al descargar sesión de la nube (intento ${this.downloadAttempts}/${this.maxDownloadAttempts}), iniciando sesión nueva`);
+          console.log(
+            `❌ Error al descargar sesión de la nube (intento ${this.downloadAttempts}/${this.maxDownloadAttempts}), iniciando sesión nueva`,
+          );
         }
       } else if (this.downloadAttempts >= this.maxDownloadAttempts) {
-        console.log('❌ Máximo de intentos de descarga alcanzado, iniciando sesión nueva');
+        console.log(
+          '❌ Máximo de intentos de descarga alcanzado, iniciando sesión nueva',
+        );
       }
 
       // Si no hay sesión válida (ni local ni de la nube), limpiar completamente el directorio
       if (!hasValidLocalSession) {
         try {
-          console.log('🧹 Limpiando directorio de sesión para empezar de cero...');
+          console.log(
+            '🧹 Limpiando directorio de sesión para empezar de cero...',
+          );
           await this.deleteSession();
           await fs.mkdir(this.SESSION_DIR, { recursive: true });
-          console.log('✅ Directorio de sesión limpiado, listo para generar nuevo QR');
+          console.log(
+            '✅ Directorio de sesión limpiado, listo para generar nuevo QR',
+          );
         } catch (error) {
           console.log('⚠️ Error limpiando sesión:', error.message);
         }
@@ -164,7 +198,9 @@ export class WhatsappService implements OnModuleInit {
       const { version } = await fetchLatestBaileysVersion();
       this.logger.log(`Using Baileys version ${version.join('.')}`);
 
-      const { state, saveCreds } = await useMultiFileAuthState(this.SESSION_DIR);
+      const { state, saveCreds } = await useMultiFileAuthState(
+        this.SESSION_DIR,
+      );
 
       // Logger personalizado para filtrar logs innecesarios de Baileys
       const customLogger = {
@@ -173,15 +209,28 @@ export class WhatsappService implements OnModuleInit {
         debug: () => {},
         info: (message: any, ...args: any[]) => {
           // Convertir message a string si no lo es
-          const messageStr = typeof message === 'string' ? message : String(message || '');
-          const importantMessages = ['connection', 'qr', 'creds', 'error', 'close', 'open'];
-          if (importantMessages.some(keyword => messageStr.toLowerCase().includes(keyword))) {
+          const messageStr =
+            typeof message === 'string' ? message : String(message || '');
+          const importantMessages = [
+            'connection',
+            'qr',
+            'creds',
+            'error',
+            'close',
+            'open',
+          ];
+          if (
+            importantMessages.some((keyword) =>
+              messageStr.toLowerCase().includes(keyword),
+            )
+          ) {
             this.logger.log(`[Baileys] ${messageStr}`, ...args);
           }
         },
         warn: (message: any, ...args: any[]) => {
           // Convertir message a string si no lo es
-          const messageStr = typeof message === 'string' ? message : String(message || '');
+          const messageStr =
+            typeof message === 'string' ? message : String(message || '');
           if (
             !messageStr.includes('Session error') &&
             !messageStr.includes('Over 2000 messages') &&
@@ -192,7 +241,8 @@ export class WhatsappService implements OnModuleInit {
         },
         error: (message: any, ...args: any[]) => {
           // Convertir message a string si no lo es
-          const messageStr = typeof message === 'string' ? message : String(message || '');
+          const messageStr =
+            typeof message === 'string' ? message : String(message || '');
           if (
             !messageStr.includes('Session error') &&
             !messageStr.includes('Over 2000 messages') &&
@@ -240,7 +290,9 @@ export class WhatsappService implements OnModuleInit {
           await saveCreds();
 
           // Auto-backup to cloud (funcionalidad específica de este bot)
-          if (this.configService.get<string>('server.node_env') === 'production') {
+          if (
+            this.configService.get<string>('server.node_env') === 'production'
+          ) {
             try {
               await this.autoBackupToCloud();
             } catch (error) {
@@ -256,7 +308,9 @@ export class WhatsappService implements OnModuleInit {
             await saveCreds();
           } catch (retryError) {
             const retryErr = retryError as Error;
-            this.logger.error(`Failed to save credentials after retry: ${retryErr.message}`);
+            this.logger.error(
+              `Failed to save credentials after retry: ${retryErr.message}`,
+            );
           }
         }
       });
@@ -272,7 +326,9 @@ export class WhatsappService implements OnModuleInit {
           if (this.qrAttempts < this.maxQrAttempts) {
             this.qrAttempts++;
           }
-          this.logger.log(`QR code generated (attempt ${this.qrAttempts}/${this.maxQrAttempts})`);
+          this.logger.log(
+            `QR code generated (attempt ${this.qrAttempts}/${this.maxQrAttempts})`,
+          );
         }
 
         // Estado: connecting
@@ -292,17 +348,23 @@ export class WhatsappService implements OnModuleInit {
           if (this.socket) {
             try {
               await this.socket.sendPresenceUpdate('unavailable');
-              this.logger.log('Marked as unavailable to prevent "online" status');
+              this.logger.log(
+                'Marked as unavailable to prevent "online" status',
+              );
             } catch (error) {
               const err = error as Error;
-              this.logger.warn(`Could not set presence to unavailable: ${err.message}`);
+              this.logger.warn(
+                `Could not set presence to unavailable: ${err.message}`,
+              );
             }
           }
 
           this.logger.log('Bot is ready to send messages');
 
           // Backup session when successfully connected (funcionalidad específica de este bot)
-          if (this.configService.get<string>('server.node_env') === 'production') {
+          if (
+            this.configService.get<string>('server.node_env') === 'production'
+          ) {
             this.autoBackupToCloud().catch((err) => {
               this.logger.warn('Auto-backup failed:', err);
             });
@@ -317,54 +379,100 @@ export class WhatsappService implements OnModuleInit {
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
           // Log detallado del error
-          this.logger.log(`Connection closed - StatusCode: ${statusCode}, Message: ${errorMessage}`);
-          
+          this.logger.log(
+            `Connection closed - StatusCode: ${statusCode}, Message: ${errorMessage}`,
+          );
+
           // Log específico para errores comunes al escanear QR
           if (statusCode === DisconnectReason.badSession) {
-            this.logger.error('❌ Error: Sesión inválida. Por favor, escanea el QR nuevamente o limpia la sesión.');
+            this.logger.error(
+              '❌ Error: Sesión inválida. Por favor, escanea el QR nuevamente o limpia la sesión.',
+            );
             this.appService.setQrCode(''); // Limpiar QR actual
           } else if (statusCode === DisconnectReason.connectionClosed) {
-            this.logger.warn('⚠️ Conexión cerrada por el servidor. Intentando reconectar...');
+            this.logger.warn(
+              '⚠️ Conexión cerrada por el servidor. Intentando reconectar...',
+            );
           } else if (statusCode === DisconnectReason.connectionLost) {
             this.logger.warn('⚠️ Conexión perdida. Intentando reconectar...');
           } else if (statusCode === DisconnectReason.timedOut) {
-            this.logger.warn('⚠️ Timeout de conexión. Intentando reconectar...');
+            this.logger.warn(
+              '⚠️ Timeout de conexión. Intentando reconectar...',
+            );
           } else if (statusCode === 440) {
             // Error de conflicto - otra sesión activa
-            this.logger.warn('⚠️ Conflicto de sesión (440) - otra instancia está conectada. Esperando antes de reconectar...');
+            this.logger.warn(
+              '⚠️ Conflicto de sesión (440) - otra instancia está conectada. Esperando antes de reconectar...',
+            );
+            // En caso de conflicto, esperar más tiempo y verificar si ya hay conexión antes de reconectar
+            setTimeout(() => {
+              // Si ya hay una conexión activa, no intentar reconectar
+              if (this.isConnected()) {
+                this.logger.log(
+                  '✅ Ya hay una conexión activa, no se requiere reconexión',
+                );
+                this.reconnectionAttempts = 0; // Resetear contador si hay conexión
+                return;
+              }
+              // Solo reconectar si no hay conexión activa
+              if (
+                !this.isInitializing &&
+                this.reconnectionAttempts < this.maxReconnectionAttempts
+              ) {
+                this.reconnectionAttempts++;
+                this.logger.log(
+                  `Reconnecting after conflict... (attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts})`,
+                );
+                this.onModuleInit().catch((err) => {
+                  this.logger.error(
+                    'Error during reconnection after conflict:',
+                    err.message,
+                  );
+                });
+              }
+            }, 60000); // Esperar 60 segundos en caso de conflicto
+            return; // No continuar con la lógica de reconexión normal
           }
-
-          // No reconectar inmediatamente en caso de conflicto (440)
-          const isConflict = statusCode === 440;
 
           if (shouldReconnect) {
             // Reconectar automáticamente si no fue logout
             if (this.reconnectionAttempts < this.maxReconnectionAttempts) {
               this.reconnectionAttempts++;
-              // Delay más largo para conflictos (30s) vs reconexiones normales (5s)
-              const delay = isConflict ? 30000 : 5000;
-              this.logger.log(`Reconnecting... (attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts}) in ${delay/1000}s`);
+              const delay = 5000; // 5 segundos para reconexiones normales
+              this.logger.log(
+                `Reconnecting... (attempt ${this.reconnectionAttempts}/${this.maxReconnectionAttempts}) in ${delay / 1000}s`,
+              );
               setTimeout(() => {
                 if (!this.isInitializing) {
                   this.onModuleInit();
                 } else {
-                  this.logger.warn('Initialization already in progress, skipping reconnection...');
+                  this.logger.warn(
+                    'Initialization already in progress, skipping reconnection...',
+                  );
                 }
               }, delay);
             } else {
-              this.logger.error('Maximum reconnection attempts reached. Manual intervention required.');
+              this.logger.error(
+                'Maximum reconnection attempts reached. Manual intervention required.',
+              );
             }
           } else {
-            this.logger.log('Connection closed (logged out). Manual reconnection required.');
+            this.logger.log(
+              'Connection closed (logged out). Manual reconnection required.',
+            );
             this.appService.setQrCode(''); // Limpiar QR cuando se hace logout
           }
         }
       });
 
       // Configurar manejador global para errores de sesión (una sola vez)
-      if (!process.listeners('unhandledRejection').some((listener: any) =>
-        listener.toString().includes('Session error')
-      )) {
+      if (
+        !process
+          .listeners('unhandledRejection')
+          .some((listener: any) =>
+            listener.toString().includes('Session error'),
+          )
+      ) {
         process.on('unhandledRejection', (reason, promise) => {
           if (reason && typeof reason === 'object' && 'message' in reason) {
             const errorMessage = String((reason as any).message || '');
@@ -377,11 +485,11 @@ export class WhatsappService implements OnModuleInit {
               'No matching sessions found',
               'Invalid PreKey ID',
               'failed to decrypt message',
-              'transaction failed'
+              'transaction failed',
             ];
 
-            const isSessionError = sessionErrors.some(err =>
-              errorMessage.includes(err) || errorName.includes(err)
+            const isSessionError = sessionErrors.some(
+              (err) => errorMessage.includes(err) || errorName.includes(err),
             );
 
             if (isSessionError) {
@@ -401,14 +509,15 @@ export class WhatsappService implements OnModuleInit {
       // Marcar inicialización como completada
       this.isInitializing = false;
       this.logger.log('✅ WhatsApp Service inicializado correctamente');
-
     } catch (error) {
-      this.logger.error('❌ Error durante la inicialización de WhatsApp Service:', error);
+      this.logger.error(
+        '❌ Error durante la inicialización de WhatsApp Service:',
+        error,
+      );
       this.isInitializing = false; // Reset flag en caso de error
       throw error;
     }
   }
-
 
   /**
    * Verifica y actualiza el circuit breaker
@@ -532,6 +641,18 @@ export class WhatsappService implements OnModuleInit {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        // Verificar conexión antes de cada intento
+        if (!this.isConnected()) {
+          this.logger.warn(
+            `⚠️ WhatsApp no está conectado, esperando reconexión... (attempt ${attempt}/${maxRetries})`,
+          );
+          // Esperar hasta 30 segundos para que se reconecte
+          await this.waitForConnection(30000);
+          if (!this.isConnected()) {
+            throw new Error('WhatsApp not connected after waiting');
+          }
+        }
+
         this.logger.log(
           `📤 Sending ${media || 'text'} message (attempt ${attempt}/${maxRetries}) to ${jid_final}`,
         );
@@ -572,7 +693,10 @@ export class WhatsappService implements OnModuleInit {
 
         // Aplicar timeout
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Message send timeout')), timeoutMs);
+          setTimeout(
+            () => reject(new Error('Message send timeout')),
+            timeoutMs,
+          );
         });
 
         await Promise.race([sendPromise, timeoutPromise]);
@@ -585,13 +709,26 @@ export class WhatsappService implements OnModuleInit {
         this.recordSuccess();
 
         return; // Éxito, salir del loop
-
       } catch (error) {
         const err = error as Error;
+        const isConnectionError =
+          err.message.includes('Connection Closed') ||
+          err.message.includes('Connection closed') ||
+          err.message.includes('WhatsApp not connected') ||
+          err.message.includes('not connected');
+
         this.logger.error(
           `❌ Error sending ${media || 'text'} message (attempt ${attempt}/${maxRetries}):`,
           err.message,
         );
+
+        // Si es error de conexión, esperar a que se reconecte
+        if (isConnectionError && attempt < maxRetries) {
+          this.logger.warn(
+            '⚠️ Conexión perdida durante el envío, esperando reconexión...',
+          );
+          await this.waitForConnection(30000);
+        }
 
         // Si es el último intento, registrar fallo y lanzar el error
         if (attempt === maxRetries) {
@@ -602,10 +739,7 @@ export class WhatsappService implements OnModuleInit {
         }
 
         // Esperar antes del siguiente intento (backoff exponencial)
-        const delay = Math.min(
-          2000 * Math.pow(2, attempt - 1),
-          10000,
-        ); // Max 10 segundos para archivos
+        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 10000); // Max 10 segundos para archivos
         this.logger.log(`⏳ Retrying in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -665,8 +799,7 @@ export class WhatsappService implements OnModuleInit {
         }
 
         // Pequeña pausa entre archivos para evitar spam
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error) {
         console.error(`Error enviando archivo ${file.fileName}:`, error);
         // Continuar con el siguiente archivo
@@ -685,16 +818,18 @@ export class WhatsappService implements OnModuleInit {
     }>,
     isGroup?: boolean,
   ) {
-    const files = documents.map(doc => ({
+    const files = documents.map((doc) => ({
       ...doc,
       media: 'document' as const,
-      mimetype: doc.mimetype || 'application/pdf'
+      mimetype: doc.mimetype || 'application/pdf',
     }));
 
     return this.sendMultipleFiles(jid, text, files, isGroup);
   }
 
-  async uploadSession(sessionFiles: { [fileName: string]: string }): Promise<void> {
+  async uploadSession(sessionFiles: {
+    [fileName: string]: string;
+  }): Promise<void> {
     try {
       // Crear un ZIP con todos los archivos de sesión
       const AdmZip = require('adm-zip');
@@ -726,8 +861,8 @@ export class WhatsappService implements OnModuleInit {
 
       // Usar fs.rm con recursive y force para manejar tanto archivos como directorios
       await fs.rm(sessionDirPath, {
-        recursive: true,  // Elimina directorios recursivamente
-        force: true       // No falla si el archivo/directorio no existe
+        recursive: true, // Elimina directorios recursivamente
+        force: true, // No falla si el archivo/directorio no existe
       });
 
       console.log(`Session ${this.SESSION_DIR} deleted successfully`);
@@ -743,7 +878,9 @@ export class WhatsappService implements OnModuleInit {
    */
   async clearProblematicSessions(): Promise<void> {
     try {
-      console.log('🧹 Limpiando sesiones problemáticas para eliminar desincronización...');
+      console.log(
+        '🧹 Limpiando sesiones problemáticas para eliminar desincronización...',
+      );
 
       const sessionDirPath = this.SESSION_DIR;
 
@@ -753,21 +890,34 @@ export class WhatsappService implements OnModuleInit {
 
         // Eliminar solo archivos de sesión (session-*), mantener creds.json
         for (const file of files) {
-          if (file.startsWith('session-') || file.startsWith('pre-key-') || file.startsWith('sender-key-') || file.startsWith('app-state-sync-key-')) {
+          if (
+            file.startsWith('session-') ||
+            file.startsWith('pre-key-') ||
+            file.startsWith('sender-key-') ||
+            file.startsWith('app-state-sync-key-')
+          ) {
             const filePath = path.join(sessionDirPath, file);
             try {
               await fs.unlink(filePath);
-              console.log(`✅ Eliminado archivo de sesión problemático: ${file}`);
+              console.log(
+                `✅ Eliminado archivo de sesión problemático: ${file}`,
+              );
             } catch (error) {
               console.warn(`⚠️ No se pudo eliminar ${file}:`, error.message);
             }
           }
         }
 
-        console.log('✅ Sesiones problemáticas limpiadas. Se mantiene creds.json para reconexión rápida.');
-        console.log('💡 La próxima vez que se conecte, se regenerarán las sesiones limpias.');
+        console.log(
+          '✅ Sesiones problemáticas limpiadas. Se mantiene creds.json para reconexión rápida.',
+        );
+        console.log(
+          '💡 La próxima vez que se conecte, se regenerarán las sesiones limpias.',
+        );
       } catch (error) {
-        console.log('⚠️ No se encontró directorio de sesión, no hay nada que limpiar');
+        console.log(
+          '⚠️ No se encontró directorio de sesión, no hay nada que limpiar',
+        );
       }
     } catch (error) {
       console.error('❌ Error limpiando sesiones problemáticas:', error);
@@ -808,7 +958,9 @@ export class WhatsappService implements OnModuleInit {
       // Reinicializar
       await this.onModuleInit();
 
-      console.log('✅ Reconexión iniciada. Usa /qr-code para obtener el nuevo QR.');
+      console.log(
+        '✅ Reconexión iniciada. Usa /qr-code para obtener el nuevo QR.',
+      );
     } catch (error) {
       console.error('❌ Error en clearSessionAndReconnect:', error);
       throw error;
@@ -823,7 +975,8 @@ export class WhatsappService implements OnModuleInit {
         sessionFileName = 'whatsapp-session-latest.zip';
       }
 
-      const sessionZip = await this.digitalOceanService.getFile(sessionFileName);
+      const sessionZip =
+        await this.digitalOceanService.getFile(sessionFileName);
 
       // Extraer ZIP localmente
       const AdmZip = require('adm-zip');
@@ -866,8 +1019,8 @@ export class WhatsappService implements OnModuleInit {
 
         if (fileStats.isFile()) {
           // Solo incluir archivos esenciales
-          const isEssential = essentialFilePatterns.some(pattern => 
-            file === pattern || file.startsWith(pattern)
+          const isEssential = essentialFilePatterns.some(
+            (pattern) => file === pattern || file.startsWith(pattern),
           );
 
           if (isEssential) {
@@ -886,7 +1039,9 @@ export class WhatsappService implements OnModuleInit {
 
       await this.digitalOceanService.uploadFile(zipFileName, zipBuffer);
 
-      this.logger.log(`✅ Session backed up successfully as ${zipFileName} (${addedCount} archivos esenciales, ${skippedCount} omitidos)`);
+      this.logger.log(
+        `✅ Session backed up successfully as ${zipFileName} (${addedCount} archivos esenciales, ${skippedCount} omitidos)`,
+      );
       return zipFileName;
     } catch (error) {
       this.logger.error('Error backing up session:', error);
@@ -953,8 +1108,8 @@ export class WhatsappService implements OnModuleInit {
             const stat = await fs.stat(filePath);
             if (stat.isFile()) {
               // Solo incluir archivos esenciales
-              const isEssential = essentialFilePatterns.some(pattern => 
-                file === pattern || file.startsWith(pattern)
+              const isEssential = essentialFilePatterns.some(
+                (pattern) => file === pattern || file.startsWith(pattern),
               );
 
               if (isEssential) {
@@ -971,11 +1126,16 @@ export class WhatsappService implements OnModuleInit {
               }
             }
           } catch (error) {
-            this.logger.warn(`Could not process ${file} for backup:`, error.message);
+            this.logger.warn(
+              `Could not process ${file} for backup:`,
+              error.message,
+            );
           }
         }
 
-        this.logger.log(`📦 Backup: ${addedCount} archivos esenciales, ${skippedCount} archivos omitidos (pre-keys/sessions se regeneran automáticamente)`);
+        this.logger.log(
+          `📦 Backup: ${addedCount} archivos esenciales, ${skippedCount} archivos omitidos (pre-keys/sessions se regeneran automáticamente)`,
+        );
       } catch (error) {
         this.logger.warn('Could not read session directory:', error.message);
         // Fallback: solo creds.json si no se puede leer el directorio
@@ -985,7 +1145,10 @@ export class WhatsappService implements OnModuleInit {
           zip.addFile('creds.json', fileContent);
           this.logger.log('✅ Added creds.json to backup (fallback)');
         } catch (error) {
-          this.logger.warn('Could not add creds.json to backup:', error.message);
+          this.logger.warn(
+            'Could not add creds.json to backup:',
+            error.message,
+          );
         }
       }
 
@@ -994,7 +1157,7 @@ export class WhatsappService implements OnModuleInit {
       // Guardar siempre como el mismo archivo en la raíz del bucket
       await this.digitalOceanService.uploadFile(
         'whatsapp-session-latest.zip',
-        zipBuffer
+        zipBuffer,
       );
 
       // Actualizar timestamp del último backup
@@ -1037,20 +1200,20 @@ export class WhatsappService implements OnModuleInit {
         // Crear promise con timeout
         const sendPromise = this.socket.sendMessage(jid, { text });
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Message send timeout')), timeoutMs);
+          setTimeout(
+            () => reject(new Error('Message send timeout')),
+            timeoutMs,
+          );
         });
 
         await Promise.race([sendPromise, timeoutPromise]);
 
-        this.logger.log(
-          `✅ Test message sent successfully to ${jid}: ${text}`,
-        );
+        this.logger.log(`✅ Test message sent successfully to ${jid}: ${text}`);
 
         // Registrar éxito en circuit breaker
         this.recordSuccess();
 
         return; // Éxito, salir del loop
-
       } catch (error) {
         const err = error as Error;
         this.logger.error(
@@ -1063,9 +1226,7 @@ export class WhatsappService implements OnModuleInit {
           err.message.includes('Connection Closed') ||
           err.message.includes('WhatsApp not connected')
         ) {
-          this.logger.error(
-            '🚫 Connection lost, cannot retry message sending',
-          );
+          this.logger.error('🚫 Connection lost, cannot retry message sending');
           this.recordFailure();
           throw new Error(`Connection lost: ${err.message}`);
         }
@@ -1127,14 +1288,33 @@ export class WhatsappService implements OnModuleInit {
   getConnectionStatus(): { connected: boolean; user?: any } {
     return {
       connected: this.isConnected(),
-      user: this.socket?.user || null
+      user: this.socket?.user || null,
     };
+  }
+
+  /**
+   * Espera a que la conexión se establezca (hasta un máximo de tiempo)
+   */
+  private async waitForConnection(maxWaitMs: number = 30000): Promise<boolean> {
+    const startTime = Date.now();
+    const checkInterval = 1000; // Verificar cada segundo
+
+    while (Date.now() - startTime < maxWaitMs) {
+      if (this.isConnected()) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, checkInterval));
+    }
+
+    return this.isConnected();
   }
 
   /**
    * Obtiene la lista de grupos de WhatsApp
    */
-  async getGroups(): Promise<Array<{ id: string; name: string; participantsCount: number }>> {
+  async getGroups(): Promise<
+    Array<{ id: string; name: string; participantsCount: number }>
+  > {
     try {
       if (!this.isConnected()) {
         throw new Error('WhatsApp not connected');
@@ -1146,15 +1326,16 @@ export class WhatsappService implements OnModuleInit {
       const groups = await this.socket.groupFetchAllParticipating();
 
       // Formatear la respuesta
-      const formattedGroups = Object.values(groups).map((group: GroupMetadata) => ({
-        id: group.id,
-        name: group.subject || 'Sin nombre',
-        participantsCount: group.participants ? group.participants.length : 0
-      }));
+      const formattedGroups = Object.values(groups).map(
+        (group: GroupMetadata) => ({
+          id: group.id,
+          name: group.subject || 'Sin nombre',
+          participantsCount: group.participants ? group.participants.length : 0,
+        }),
+      );
 
       console.log(`✅ Found ${formattedGroups.length} groups`);
       return formattedGroups;
-
     } catch (error) {
       console.error('❌ Error getting groups:', error.message);
       throw new Error(`Failed to get groups: ${error.message}`);
@@ -1222,7 +1403,11 @@ export class WhatsappService implements OnModuleInit {
         if (currentQr) {
           resolve(currentQr);
         } else {
-          reject(new Error('Timeout generando QR. La conexión puede estar fallando. Verifica que no haya otra sesión activa.'));
+          reject(
+            new Error(
+              'Timeout generando QR. La conexión puede estar fallando. Verifica que no haya otra sesión activa.',
+            ),
+          );
         }
       }, 15000); // Aumentado de 5 a 15 segundos
     });
